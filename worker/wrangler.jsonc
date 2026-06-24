@@ -1,0 +1,36 @@
+{
+  "$schema": "./node_modules/wrangler/config-schema.json",
+  "name": "zellu-worker",
+  "main": "src/index.ts",
+  "compatibility_date": "2026-06-22",
+  "compatibility_flags": ["nodejs_compat"],
+  "vars": {
+    "APP_URL": "https://zelluapp.com.br",
+    "PREMIUM_PRICE": "29.90"
+  },
+  "triggers": {
+    "crons": ["*/15 * * * *"]
+  },
+  "kv_namespaces": [
+    {
+      "binding": "SUBSCRIPTIONS",
+      "id": "145ce943bf6b455dba9162eb15e9f1d1"
+    },
+    {
+      "binding": "REMINDERS",
+      "id": "2269e34e438c45a2acee73a031ce0e4d"
+    }
+  ],
+  "d1_databases": [
+    {
+      "binding": "DB",
+      "database_name": "zellu-payments",
+      "database_id": "17480c12-e846-4796-8afe-682037324af5",
+      "migrations_dir": "migrations"
+    }
+  ],
+  "observability": {
+    "enabled": true,
+    "head_sampling_rate": 1
+  }
+}

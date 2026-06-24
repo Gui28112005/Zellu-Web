@@ -1,0 +1,39 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 240 200">
+  <!-- Roof shadow/base -->
+  <polygon points="22,90 120,18 218,90" fill="#c8cdd6" stroke="#9aa0ac" stroke-width="1.5" stroke-linejoin="round"/>
+  <!-- Roof main -->
+  <polygon points="18,88 120,14 222,88" fill="#e8ecf2" stroke="#b0b8c4" stroke-width="2" stroke-linejoin="round"/>
+  <!-- Roof overhang bottom edge -->
+  <line x1="14" y1="88" x2="226" y2="88" stroke="#9aa0ac" stroke-width="3" stroke-linecap="round"/>
+
+  <!-- Gable circle window -->
+  <circle cx="120" cy="68" r="9" fill="#d0d6e0" stroke="#9aa0ac" stroke-width="1.8"/>
+  <circle cx="120" cy="68" r="5" fill="#b8bfcc" stroke="none"/>
+
+  <!-- Walls -->
+  <rect x="30" y="88" width="180" height="96" fill="#e8ecf2" stroke="#b0b8c4" stroke-width="1.5"/>
+
+  <!-- Horizontal siding lines on walls -->
+  <line x1="30" y1="103" x2="210" y2="103" stroke="#c8cdd6" stroke-width="1"/>
+  <line x1="30" y1="118" x2="210" y2="118" stroke="#c8cdd6" stroke-width="1"/>
+  <line x1="30" y1="133" x2="210" y2="133" stroke="#c8cdd6" stroke-width="1"/>
+  <line x1="30" y1="148" x2="210" y2="148" stroke="#c8cdd6" stroke-width="1"/>
+  <line x1="30" y1="163" x2="210" y2="163" stroke="#c8cdd6" stroke-width="1"/>
+
+  <!-- Garage door -->
+  <rect x="68" y="104" width="104" height="80" rx="2" fill="#dde1e9" stroke="#9aa0ac" stroke-width="1.8"/>
+
+  <!-- Garage door panels (horizontal lines) -->
+  <line x1="68" y1="120" x2="172" y2="120" stroke="#b0b8c4" stroke-width="1.2"/>
+  <line x1="68" y1="136" x2="172" y2="136" stroke="#b0b8c4" stroke-width="1.2"/>
+  <line x1="68" y1="152" x2="172" y2="152" stroke="#b0b8c4" stroke-width="1.2"/>
+  <line x1="68" y1="168" x2="172" y2="168" stroke="#b0b8c4" stroke-width="1.2"/>
+
+  <!-- Left pillar base -->
+  <rect x="26" y="178" width="22" height="10" rx="1" fill="#d0d6e0" stroke="#9aa0ac" stroke-width="1.5"/>
+  <!-- Right pillar base -->
+  <rect x="192" y="178" width="22" height="10" rx="1" fill="#d0d6e0" stroke="#9aa0ac" stroke-width="1.5"/>
+
+  <!-- Bottom floor line -->
+  <line x1="22" y1="188" x2="218" y2="188" stroke="#9aa0ac" stroke-width="2" stroke-linecap="round"/>
+</svg>

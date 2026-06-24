@@ -1,0 +1,22 @@
+{
+  "name": "zellu-worker",
+  "version": "1.0.0",
+  "private": true,
+  "scripts": {
+    "dev": "wrangler dev",
+    "deploy": "wrangler deploy",
+    "deploy:check": "wrangler deploy --dry-run",
+    "types": "wrangler types",
+    "db:migrate:local": "wrangler d1 migrations apply zellu-payments --local",
+    "db:migrate:remote": "wrangler d1 migrations apply zellu-payments --remote",
+    "vapid": "node scripts/generate-vapid.js"
+  },
+  "dependencies": {
+    "web-push": "^3.6.7"
+  },
+  "devDependencies": {
+    "@types/web-push": "^3.6.3",
+    "typescript": "^5.4.5",
+    "wrangler": "^4.0.0"
+  }
+}
