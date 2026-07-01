@@ -1,6 +1,7 @@
 import React from 'react'
 import { motion, AnimatePresence } from 'framer-motion'
-import { CheckCircle2, Clock, X, CalendarPlus } from 'lucide-react'
+import { CheckCircle2, Clock, X, CalendarPlus, BookOpen } from 'lucide-react'
+import { useNavigate } from 'react-router-dom'
 
 interface Props {
   isOpen: boolean
@@ -10,6 +11,7 @@ interface Props {
 }
 
 export default function NewReminderTypeSheet({ isOpen, onClose, onSelectJaAconteceu, onSelectVaiAcontecer }: Props) {
+  const navigate = useNavigate()
   return (
     <AnimatePresence>
       {isOpen && (
@@ -82,7 +84,22 @@ export default function NewReminderTypeSheet({ isOpen, onClose, onSelectJaAconte
               </button>
             </div>
 
-            <div className="pb-4" />
+            {/* Guia de Manutenção */}
+            <div className="px-4 pb-4 pt-1">
+              <div className="h-px bg-[#1e2d44] mb-3" />
+              <button
+                onClick={() => { onClose(); navigate('/guia-manutencao') }}
+                className="w-full flex items-center gap-3 px-3 py-2.5 rounded-2xl border border-[#22c55e]/20 bg-[#22c55e]/5 hover:bg-[#22c55e]/10 active:scale-[0.98] transition-all text-left"
+              >
+                <div className="w-8 h-8 rounded-xl bg-[#22c55e]/15 flex items-center justify-center flex-shrink-0">
+                  <BookOpen size={16} className="text-[#22c55e]" />
+                </div>
+                <div className="flex-1 min-w-0">
+                  <p className="text-[#c8d4e8] font-medium text-xs">Não sabe o que lembrar?</p>
+                  <p className="text-[#22c55e] text-xs font-semibold">Ver Guia de Manutenção →</p>
+                </div>
+              </button>
+            </div>
           </motion.div>
         </>
       )}

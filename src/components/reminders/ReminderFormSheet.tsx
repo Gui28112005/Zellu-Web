@@ -35,9 +35,9 @@ const TIPO_LIST: { tipo: TipoManutencao; emoji: string }[] = [
   { tipo: 'OUTROS',        emoji: '📝' },
 ]
 
-const TIME_OPTIONS = Array.from({ length: 24 * 12 }, (_, index) => {
-  const hour = Math.floor(index / 12)
-  const minute = String((index % 12) * 5).padStart(2, '0')
+const TIME_OPTIONS = Array.from({ length: 24 * 4 }, (_, index) => {
+  const hour = Math.floor(index / 4)
+  const minute = String((index % 4) * 15).padStart(2, '0')
   return `${String(hour).padStart(2, '0')}:${minute}`
 })
 
@@ -99,8 +99,13 @@ export default function ReminderFormSheet({
 }: ReminderFormSheetProps) {
   const navigate = useNavigate()
   const user = useStore((s) => s.user)
+  const lembretes = useStore((s) => s.lembretes)
   const addLembreteLocal = useStore((s) => s.addLembreteLocal)
   const updateLembreteLocal = useStore((s) => s.updateLembreteLocal)
+
+  const LIMITE_POR_PLANO: Record<string, number> = { FREE: 5, LITE: 15, FROTA: 50, EMPRESARIAL: Infinity }
+  const limiteAtual = LIMITE_POR_PLANO[user?.plano ?? 'FREE'] ?? 5
+  const totalAtual = lembretes.filter((l) => l.veiculoId === veiculoId).length
 
   const [saving, setSaving] = useState(false)
   const [tituloValue, setTituloValue] = useState('')
@@ -153,8 +158,8 @@ export default function ReminderFormSheet({
         tipo: lembrete.tipo,
         peca: lembrete.peca ?? '',
         dataLimite: lembrete.dataLimite ?? todayStr(),
-        kmLimite: lembrete.kmLimite ?? '',
-        valor: lembrete.valor ? String(lembrete.valor) : '',
+        kmLimite: lembrete.kmLimite ? Number(lembrete.kmLimite.replace(/\D/g, '')).toLocaleString('pt-BR') : '',
+        valor: lembrete.valor ? lembrete.valor.toLocaleString('pt-BR', { minimumFractionDigits: 2 }) : '',
         horaAviso: lembrete.horaAviso ?? '08:00',
         estabelecimentoNome: lembrete.estabelecimentoNome ?? '',
       })
@@ -202,8 +207,8 @@ export default function ReminderFormSheet({
         tipo: fd.tipo,
         peca: fd.peca?.trim() ?? '',
         dataLimite: fd.dataLimite ?? '',
-        kmLimite: fd.kmLimite?.trim() ?? '',
-        valor: fd.valor ? parseFloat(fd.valor.replace(',', '.')) : 0,
+        kmLimite: fd.kmLimite ? fd.kmLimite.replace(/\./g, '').replace(/\D/g, '') : '',
+        valor: fd.valor ? parseFloat(fd.valor.replace(/\./g, '').replace(',', '.')) : 0,
         horaAviso: fd.horaAviso ?? '08:00',
         estabelecimentoNome: fd.estabelecimentoNome?.trim() ?? '',
         concluido: lembrete?.concluido ?? createAsCompleted,
@@ -219,6 +224,11 @@ export default function ReminderFormSheet({
         updateLembreteLocal(updated)
         toast.success('Lembrete atualizado!')
       } else {
+        if (totalAtual >= limiteAtual) {
+          toast.error(`Limite de ${limiteAtual} avisos atingido. Faça upgrade para adicionar mais.`)
+          setSaving(false)
+          return
+        }
         const created = await addLembrete(user.uid, payload)
         addLembreteLocal(created)
         if (!createAsCompleted) {
@@ -331,9 +341,16 @@ export default function ReminderFormSheet({
             />
             <Input
               label={createAsCompleted ? 'KM no serviço' : 'KM limite'}
-              type="number"
-              placeholder="Ex: 55000"
+              type="text"
+              inputMode="numeric"
+              placeholder="Ex: 55.000"
               {...register('kmLimite')}
+              onChange={(e) => {
+                const raw = e.target.value.replace(/\D/g, '')
+                const formatted = raw ? Number(raw).toLocaleString('pt-BR') : ''
+                e.target.value = formatted
+                register('kmLimite').onChange(e)
+              }}
             />
           </div>
 
@@ -341,24 +358,43 @@ export default function ReminderFormSheet({
           <div className={createAsCompleted ? '' : 'grid grid-cols-2 gap-3'}>
             <Input
               label="Valor (R$)"
-              type="number"
-              step="0.01"
+              type="text"
+              inputMode="decimal"
               placeholder="0,00"
               {...register('valor')}
+              onChange={(e) => {
+                const raw = e.target.value.replace(/[^\d]/g, '')
+                const cents = parseInt(raw || '0', 10)
+                const formatted = (cents / 100).toLocaleString('pt-BR', { minimumFractionDigits: 2 })
+                e.target.value = formatted === '0,00' && raw === '' ? '' : formatted
+                register('valor').onChange(e)
+              }}
             />
             {!createAsCompleted && (
               <label className="block">
-                <span className="mb-2 block text-sm font-medium text-[#9bb7e8]">Hora aviso</span>
-                <select
-                  {...register('horaAviso')}
-                  className="h-14 w-full rounded-2xl border border-[#263650] bg-[#1a2740] px-4 text-base text-white outline-none transition-colors focus:border-[#4f8df7] focus:ring-2 focus:ring-[#4f8df7]/20"
-                >
-                  {TIME_OPTIONS.map((time) => (
-                    <option key={time} value={time} className="bg-[#101a2c] text-white">
-                      {time}
-                    </option>
-                  ))}
-                </select>
+                <span className="mb-2 block text-sm font-medium text-[#8892a4]">Hora aviso</span>
+                <div className="relative">
+                  <div className="pointer-events-none absolute left-4 top-1/2 -translate-y-1/2 text-[#4f8df7]">
+                    <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                      <circle cx="12" cy="12" r="10"/><polyline points="12 6 12 12 16 14"/>
+                    </svg>
+                  </div>
+                  <select
+                    {...register('horaAviso')}
+                    className="h-[3.25rem] w-full appearance-none rounded-2xl border border-[#1e2d44] bg-[#1a2540] pl-10 pr-10 text-base font-medium text-[#f0f4ff] outline-none transition-all focus:border-[#4f8df7] focus:ring-1 focus:ring-[#4f8df7]/30"
+                  >
+                    {TIME_OPTIONS.map((time) => (
+                      <option key={time} value={time} className="bg-[#131e33] text-white">
+                        {time}
+                      </option>
+                    ))}
+                  </select>
+                  <div className="pointer-events-none absolute right-4 top-1/2 -translate-y-1/2 text-[#8892a4]">
+                    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
+                      <polyline points="6 9 12 15 18 9"/>
+                    </svg>
+                  </div>
+                </div>
               </label>
             )}
           </div>

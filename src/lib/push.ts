@@ -57,7 +57,10 @@ export async function requestPushPermission(userId: string): Promise<boolean> {
   if (permission !== 'granted') return false
 
   try {
-    const registration = await navigator.serviceWorker.ready
+    const timeout = new Promise<never>((_, reject) =>
+      setTimeout(() => reject(new Error('sw_timeout')), 8000)
+    )
+    const registration = await Promise.race([navigator.serviceWorker.ready, timeout])
     const subscription = await registration.pushManager.subscribe({
       userVisibleOnly: true,
       applicationServerKey: urlBase64ToArrayBuffer(VAPID_PUBLIC_KEY),
