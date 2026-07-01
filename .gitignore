@@ -1,5 +1,6 @@
 node_modules/
 dist/
+dev-dist/
 .env
 .env.*
 !.env.example
@@ -8,6 +9,7 @@ dist/
 .dev.vars
 .wrangler/
 .DS_Store
+vite-dev*.log
 
 .vercel
 .claude/
