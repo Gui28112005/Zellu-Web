@@ -1,12 +1,21 @@
 import webpush from 'web-push'
 
 type WorkerEnv = Env & {
+  APP_URL: string
+  PREMIUM_PRICE?: string
+  LITE_PRICE?: string
+  FROTA_PRICE?: string
+  EMPRESARIAL_PRICE?: string
+  EBOOK_BUNDLE_PRICE?: string
+  LIFETIME_PERSONAL_PRICE?: string
   MP_ACCESS_TOKEN: string
   MP_WEBHOOK_SECRET: string
   FIREBASE_API_KEY: string
   VAPID_PUBLIC_KEY: string
   VAPID_PRIVATE_KEY: string
 }
+
+type PaidPlan = 'LITE' | 'FROTA' | 'EMPRESARIAL'
 
 interface ReminderSync {
   id: string
@@ -42,6 +51,17 @@ interface SubscriptionRow {
   next_payment_at: string | null
 }
 
+interface EbookPurchaseRow {
+  user_id: string
+  email: string
+  product_id: string
+  status: string
+  provider_preference_id: string | null
+  provider_payment_id: string | null
+  checkout_url: string | null
+  amount: number | null
+}
+
 interface MercadoPagoSubscription {
   id: string
   status: string
@@ -51,11 +71,29 @@ interface MercadoPagoSubscription {
   next_payment_date?: string
 }
 
+interface MercadoPagoPreference {
+  id: string
+  init_point?: string
+}
+
+interface MercadoPagoPayment {
+  id: number | string
+  status: string
+  external_reference?: string
+  transaction_amount?: number
+  payer?: { email?: string }
+}
+
 interface MercadoPagoWebhookBody {
   action?: string
   date_created?: string
   data?: { id?: string | number }
   type?: string
+}
+
+interface CheckoutRequestBody {
+  plan?: string
+  returnPath?: string
 }
 
 const ALLOWED_ORIGINS = [
@@ -65,6 +103,11 @@ const ALLOWED_ORIGINS = [
   'http://localhost:5174',
   'https://zellu-web.vercel.app'
 ]
+
+const EBOOK_BUNDLE_ID = 'ebook_bundle'
+const EBOOK_BUNDLE_TITLE = 'Pacote Zellu Biblioteca - 4 e-books automotivos'
+const LIFETIME_PERSONAL_ID = 'lifetime_personal'
+const LIFETIME_PERSONAL_TITLE = 'Zellu Pessoal Vitalicio'
 
 function cors(request: Request): HeadersInit {
   const origin = request.headers.get('Origin') ?? ''
@@ -141,13 +184,80 @@ async function getSubscription(env: WorkerEnv, userId: string): Promise<Subscrip
     .first<SubscriptionRow>()
 }
 
+async function getEbookPurchase(env: WorkerEnv, userId: string): Promise<EbookPurchaseRow | null> {
+  return env.DB.prepare(
+    `SELECT user_id, email, product_id, status, provider_preference_id,
+            provider_payment_id, checkout_url, amount
+     FROM ebook_purchases WHERE user_id = ? AND product_id = ?`,
+  )
+    .bind(userId, EBOOK_BUNDLE_ID)
+    .first<EbookPurchaseRow>()
+}
+
+function isPaidPlan(plan: string): plan is PaidPlan {
+  return plan === 'LITE' || plan === 'FROTA' || plan === 'EMPRESARIAL'
+}
+
+function planPrice(env: WorkerEnv, plan: PaidPlan): number {
+  const prices: Record<PaidPlan, string | undefined> = {
+    LITE: env.LITE_PRICE ?? '10.50',
+    FROTA: env.FROTA_PRICE ?? env.PREMIUM_PRICE ?? '29.90',
+    EMPRESARIAL: env.EMPRESARIAL_PRICE ?? '59.90',
+  }
+  return Number(prices[plan])
+}
+
+function ebookBundlePrice(env: WorkerEnv): number {
+  return Number(env.EBOOK_BUNDLE_PRICE ?? '19.90')
+}
+
+function lifetimePersonalPrice(env: WorkerEnv): number {
+  return Number(env.LIFETIME_PERSONAL_PRICE ?? '49.90')
+}
+
+function planReason(plan: PaidPlan): string {
+  if (plan === 'LITE') return 'Zellu Lite'
+  if (plan === 'EMPRESARIAL') return 'Zellu Empresarial'
+  return 'Zellu Frota'
+}
+
+function parseExternalReference(reference?: string): { userId: string; plan: PaidPlan } | null {
+  if (!reference) return null
+  const [userId, plan = 'FROTA'] = reference.split(':')
+  if (!userId || !isPaidPlan(plan)) return null
+  return { userId, plan }
+}
+
+function parseEbookReference(reference?: string): { userId: string; productId: string } | null {
+  if (!reference) return null
+  const [productId, userId] = reference.split(':')
+  if (productId !== EBOOK_BUNDLE_ID || !userId) return null
+  return { userId, productId }
+}
+
+function parseLifetimeReference(reference?: string): { userId: string; productId: string } | null {
+  if (!reference) return null
+  const [productId, userId] = reference.split(':')
+  if (productId !== LIFETIME_PERSONAL_ID || !userId) return null
+  return { userId, productId }
+}
+
 function publicSubscription(row: SubscriptionRow | null) {
-  const active = row?.status === 'ACTIVE' && row.plan === 'FROTA'
+  const active = row?.status === 'ACTIVE' && !!row.plan && row.plan !== 'FREE'
   return {
     active,
-    plan: active ? 'FROTA' : 'FREE',
+    plan: active ? row.plan : 'FREE',
     status: row?.status ?? 'INACTIVE',
     nextPaymentAt: row?.next_payment_at ?? null,
+  }
+}
+
+function publicEbookPurchase(row: EbookPurchaseRow | null) {
+  const active = row?.status === 'ACTIVE'
+  return {
+    active,
+    status: row?.status ?? 'INACTIVE',
+    productId: row?.product_id ?? EBOOK_BUNDLE_ID,
   }
 }
 
@@ -172,28 +282,34 @@ async function createCheckout(request: Request, env: WorkerEnv): Promise<Respons
   const user = await authenticateFirebase(request, env)
   if (!user) return json({ error: 'Não autenticado' }, request, 401)
 
-  const existing = await getSubscription(env, user.uid)
-  if (existing?.status === 'ACTIVE') {
-    return json({ active: true, plan: 'FROTA' }, request)
-  }
-  if (existing?.status === 'PENDING' && existing.checkout_url) {
-    return json({ checkoutUrl: existing.checkout_url }, request)
+  const body = (await request.json<CheckoutRequestBody>().catch(() => ({}))) as CheckoutRequestBody
+  const requestedPlan = body.plan
+  if (!requestedPlan || !isPaidPlan(requestedPlan)) {
+    return json({ error: 'Informe um plano valido para continuar.' }, request, 400)
   }
 
-  const price = Number(env.PREMIUM_PRICE)
+  const existing = await getSubscription(env, user.uid)
+  if (existing?.status === 'ACTIVE' && existing.plan === requestedPlan) {
+    return json({ active: true, plan: requestedPlan }, request)
+  }
+  if (existing?.status === 'ACTIVE' && existing.plan !== requestedPlan) {
+    return json({ error: 'Cancele o plano atual antes de trocar de plano.' }, request, 409)
+  }
+  const price = planPrice(env, requestedPlan)
   if (!Number.isFinite(price) || price <= 0) {
     return json({ error: 'Preço do plano não configurado' }, request, 503)
   }
 
   const appUrl = env.APP_URL.replace(/\/$/, '')
+  const returnPath = body.returnPath === '/premium' ? '/premium' : '/planos'
   const subscription = await mercadoPagoRequest<MercadoPagoSubscription>(env, '/preapproval', {
     method: 'POST',
     headers: { 'X-Idempotency-Key': crypto.randomUUID() },
     body: JSON.stringify({
-      reason: 'Zellu Premium',
-      external_reference: user.uid,
+      reason: planReason(requestedPlan),
+      external_reference: `${user.uid}:${requestedPlan}`,
       payer_email: user.email,
-      back_url: `${appUrl}/premium?pagamento=retorno`,
+      back_url: `${appUrl}${returnPath}?pagamento=retorno`,
       status: 'pending',
       auto_recurring: {
         frequency: 1,
@@ -213,26 +329,165 @@ async function createCheckout(request: Request, env: WorkerEnv): Promise<Respons
     `INSERT INTO subscriptions (
        user_id, email, plan, status, provider, provider_subscription_id,
        checkout_url, next_payment_at, created_at, updated_at
-     ) VALUES (?, ?, 'FREE', 'PENDING', 'mercadopago', ?, ?, NULL, ?, ?)
+     ) VALUES (?, ?, ?, 'PENDING', 'mercadopago', ?, ?, NULL, ?, ?)
      ON CONFLICT(user_id) DO UPDATE SET
        email = excluded.email,
-       plan = 'FREE',
+       plan = excluded.plan,
        status = 'PENDING',
        provider_subscription_id = excluded.provider_subscription_id,
        checkout_url = excluded.checkout_url,
        next_payment_at = NULL,
        updated_at = excluded.updated_at`,
   )
-    .bind(user.uid, user.email, subscription.id, subscription.init_point, now, now)
+    .bind(user.uid, user.email, requestedPlan, subscription.id, subscription.init_point, now, now)
     .run()
 
   return json({ checkoutUrl: subscription.init_point }, request, 201)
+}
+
+async function createEbookCheckout(request: Request, env: WorkerEnv): Promise<Response> {
+  const user = await authenticateFirebase(request, env)
+  if (!user) return json({ error: 'Nao autenticado' }, request, 401)
+
+  const existing = await getEbookPurchase(env, user.uid)
+  if (existing?.status === 'ACTIVE') {
+    return json({ active: true, productId: EBOOK_BUNDLE_ID }, request)
+  }
+
+  const price = ebookBundlePrice(env)
+  if (!Number.isFinite(price) || price <= 0) {
+    return json({ error: 'Preco dos e-books nao configurado' }, request, 503)
+  }
+
+  const appUrl = env.APP_URL.replace(/\/$/, '')
+  const workerUrl = new URL(request.url).origin
+  const preference = await mercadoPagoRequest<MercadoPagoPreference>(env, '/checkout/preferences', {
+    method: 'POST',
+    headers: { 'X-Idempotency-Key': crypto.randomUUID() },
+    body: JSON.stringify({
+      external_reference: `${EBOOK_BUNDLE_ID}:${user.uid}`,
+      notification_url: `${workerUrl}/payments/webhook`,
+      payer: { email: user.email },
+      back_urls: {
+        success: `${appUrl}/biblioteca?ebook=retorno`,
+        pending: `${appUrl}/biblioteca?ebook=retorno`,
+        failure: `${appUrl}/biblioteca?ebook=erro`,
+      },
+      auto_return: 'approved',
+      items: [
+        {
+          id: EBOOK_BUNDLE_ID,
+          title: EBOOK_BUNDLE_TITLE,
+          quantity: 1,
+          currency_id: 'BRL',
+          unit_price: price,
+        },
+      ],
+    }),
+  })
+
+  if (!preference.id || !preference.init_point) {
+    throw new Error('Mercado Pago nao retornou o checkout dos e-books')
+  }
+
+  const now = new Date().toISOString()
+  await env.DB.prepare(
+    `INSERT INTO ebook_purchases (
+       user_id, email, product_id, status, provider, provider_preference_id,
+       provider_payment_id, checkout_url, amount, created_at, updated_at
+     ) VALUES (?, ?, ?, 'PENDING', 'mercadopago', ?, NULL, ?, ?, ?, ?)
+     ON CONFLICT(user_id, product_id) DO UPDATE SET
+       email = excluded.email,
+       status = 'PENDING',
+       provider_preference_id = excluded.provider_preference_id,
+       provider_payment_id = NULL,
+       checkout_url = excluded.checkout_url,
+       amount = excluded.amount,
+       updated_at = excluded.updated_at`,
+  )
+    .bind(user.uid, user.email, EBOOK_BUNDLE_ID, preference.id, preference.init_point, price, now, now)
+    .run()
+
+  return json({ checkoutUrl: preference.init_point }, request, 201)
+}
+
+async function createLifetimeCheckout(request: Request, env: WorkerEnv): Promise<Response> {
+  const user = await authenticateFirebase(request, env)
+  if (!user) return json({ error: 'Nao autenticado' }, request, 401)
+
+  const existing = await getSubscription(env, user.uid)
+  if (existing?.status === 'ACTIVE' && existing.plan !== 'FREE') {
+    return json({ active: true, plan: existing.plan }, request)
+  }
+
+  const price = lifetimePersonalPrice(env)
+  if (!Number.isFinite(price) || price <= 0) {
+    return json({ error: 'Preco do vitalicio nao configurado' }, request, 503)
+  }
+
+  const appUrl = env.APP_URL.replace(/\/$/, '')
+  const workerUrl = new URL(request.url).origin
+  const preference = await mercadoPagoRequest<MercadoPagoPreference>(env, '/checkout/preferences', {
+    method: 'POST',
+    headers: { 'X-Idempotency-Key': crypto.randomUUID() },
+    body: JSON.stringify({
+      external_reference: `${LIFETIME_PERSONAL_ID}:${user.uid}`,
+      notification_url: `${workerUrl}/payments/webhook`,
+      payer: { email: user.email },
+      back_urls: {
+        success: `${appUrl}/premium?pagamento=retorno`,
+        pending: `${appUrl}/premium?pagamento=retorno`,
+        failure: `${appUrl}/premium?pagamento=erro`,
+      },
+      auto_return: 'approved',
+      items: [
+        {
+          id: LIFETIME_PERSONAL_ID,
+          title: LIFETIME_PERSONAL_TITLE,
+          quantity: 1,
+          currency_id: 'BRL',
+          unit_price: price,
+        },
+      ],
+    }),
+  })
+
+  if (!preference.id || !preference.init_point) {
+    throw new Error('Mercado Pago nao retornou o checkout do vitalicio')
+  }
+
+  const now = new Date().toISOString()
+  await env.DB.prepare(
+    `INSERT INTO subscriptions (
+       user_id, email, plan, status, provider, provider_subscription_id,
+       checkout_url, next_payment_at, created_at, updated_at
+     ) VALUES (?, ?, 'LITE', 'PENDING', 'mercadopago_lifetime', NULL, ?, NULL, ?, ?)
+     ON CONFLICT(user_id) DO UPDATE SET
+       email = excluded.email,
+       plan = 'LITE',
+       status = 'PENDING',
+       provider = 'mercadopago_lifetime',
+       provider_subscription_id = NULL,
+       checkout_url = excluded.checkout_url,
+       next_payment_at = NULL,
+       updated_at = excluded.updated_at`,
+  )
+    .bind(user.uid, user.email, preference.init_point, now, now)
+    .run()
+
+  return json({ checkoutUrl: preference.init_point }, request, 201)
 }
 
 async function subscriptionStatus(request: Request, env: WorkerEnv): Promise<Response> {
   const user = await authenticateFirebase(request, env)
   if (!user) return json({ error: 'Não autenticado' }, request, 401)
   return json(publicSubscription(await getSubscription(env, user.uid)), request)
+}
+
+async function ebookPurchaseStatus(request: Request, env: WorkerEnv): Promise<Response> {
+  const user = await authenticateFirebase(request, env)
+  if (!user) return json({ error: 'Nao autenticado' }, request, 401)
+  return json(publicEbookPurchase(await getEbookPurchase(env, user.uid)), request)
 }
 
 async function cancelSubscription(request: Request, env: WorkerEnv): Promise<Response> {
@@ -313,11 +568,114 @@ async function validateWebhookSignature(
   return constantTimeEqual(expected, parsed.signature.toLowerCase())
 }
 
-function mercadoPagoStatus(status: string): { plan: 'FREE' | 'FROTA'; status: string } {
-  if (status === 'authorized') return { plan: 'FROTA', status: 'ACTIVE' }
+function mercadoPagoStatus(status: string, paidPlan: PaidPlan): { plan: 'FREE' | PaidPlan; status: string } {
+  if (status === 'authorized') return { plan: paidPlan, status: 'ACTIVE' }
   if (status === 'cancelled') return { plan: 'FREE', status: 'CANCELLED' }
   if (status === 'paused') return { plan: 'FREE', status: 'PAUSED' }
   return { plan: 'FREE', status: 'PENDING' }
+}
+
+async function handlePaymentWebhook(
+  request: Request,
+  env: WorkerEnv,
+  dataId: string,
+  requestId: string,
+): Promise<Response> {
+  const processed = await env.DB.prepare('SELECT event_id FROM webhook_events WHERE event_id = ?')
+    .bind(requestId)
+    .first<{ event_id: string }>()
+  if (processed) return json({ ok: true, duplicate: true }, request)
+
+  const payment = await mercadoPagoRequest<MercadoPagoPayment>(
+    env,
+    `/v1/payments/${encodeURIComponent(dataId)}`,
+  )
+  const lifetimeReference = parseLifetimeReference(payment.external_reference)
+  if (lifetimeReference) {
+    const status = payment.status === 'approved'
+      ? 'ACTIVE'
+      : payment.status === 'rejected' || payment.status === 'cancelled'
+        ? 'REJECTED'
+        : 'PENDING'
+    const now = new Date().toISOString()
+
+    await env.DB.batch([
+      env.DB.prepare(
+        `INSERT INTO subscriptions (
+           user_id, email, plan, status, provider, provider_subscription_id,
+           checkout_url, next_payment_at, created_at, updated_at
+         ) VALUES (?, ?, ?, ?, 'mercadopago_lifetime', NULL, NULL, NULL, ?, ?)
+         ON CONFLICT(user_id) DO UPDATE SET
+           email = excluded.email,
+           plan = excluded.plan,
+           status = excluded.status,
+           provider = 'mercadopago_lifetime',
+           provider_subscription_id = NULL,
+           checkout_url = NULL,
+           next_payment_at = NULL,
+           updated_at = excluded.updated_at`,
+      ).bind(
+        lifetimeReference.userId,
+        payment.payer?.email ?? 'email-nao-informado@zellu.app',
+        status === 'ACTIVE' ? 'LITE' : 'FREE',
+        status,
+        now,
+        now,
+      ),
+      env.DB.prepare(
+        `INSERT OR IGNORE INTO webhook_events (event_id, provider, received_at)
+         VALUES (?, 'mercadopago', ?)`,
+      ).bind(requestId, now),
+    ])
+
+    console.log(JSON.stringify({ event: 'mercadopago_lifetime_payment', paymentId: payment.id, status }))
+    return json({ ok: true }, request)
+  }
+
+  const reference = parseEbookReference(payment.external_reference)
+  if (!reference) {
+    console.log(JSON.stringify({ event: 'mercadopago_payment_ignored', paymentId: payment.id }))
+    return json({ ok: true, ignored: true }, request)
+  }
+
+  const status = payment.status === 'approved'
+    ? 'ACTIVE'
+    : payment.status === 'rejected' || payment.status === 'cancelled'
+      ? 'REJECTED'
+      : 'PENDING'
+  const now = new Date().toISOString()
+
+  await env.DB.batch([
+    env.DB.prepare(
+      `INSERT INTO ebook_purchases (
+         user_id, email, product_id, status, provider, provider_preference_id,
+         provider_payment_id, checkout_url, amount, created_at, updated_at
+       ) VALUES (?, ?, ?, ?, 'mercadopago', NULL, ?, NULL, ?, ?, ?)
+       ON CONFLICT(user_id, product_id) DO UPDATE SET
+         email = excluded.email,
+         status = excluded.status,
+         provider_payment_id = excluded.provider_payment_id,
+         checkout_url = NULL,
+         amount = excluded.amount,
+         updated_at = excluded.updated_at`,
+    ).bind(
+      reference.userId,
+      payment.payer?.email ?? 'email-nao-informado@zellu.app',
+      reference.productId,
+      status,
+      String(payment.id),
+      payment.transaction_amount ?? ebookBundlePrice(env),
+      now,
+      now,
+    ),
+    env.DB.prepare(
+      `INSERT OR IGNORE INTO webhook_events (event_id, provider, received_at)
+       VALUES (?, 'mercadopago', ?)`,
+    ).bind(requestId, now),
+  ])
+
+  console.log(JSON.stringify({ event: 'mercadopago_ebook_payment', paymentId: payment.id, status }))
+  return json({ ok: true }, request)
 }
 
 async function handleWebhook(request: Request, env: WorkerEnv): Promise<Response> {
@@ -330,6 +688,10 @@ async function handleWebhook(request: Request, env: WorkerEnv): Promise<Response
   }
 
   const eventType = body.type ?? url.searchParams.get('type') ?? ''
+  if (eventType === 'payment') {
+    return handlePaymentWebhook(request, env, dataId, request.headers.get('x-request-id') ?? '')
+  }
+
   if (eventType !== 'subscription_preapproval') {
     console.log(JSON.stringify({ event: 'mercadopago_webhook_ignored', type: eventType }))
     return json({ ok: true, ignored: true }, request)
@@ -345,10 +707,12 @@ async function handleWebhook(request: Request, env: WorkerEnv): Promise<Response
     env,
     `/preapproval/${encodeURIComponent(dataId)}`,
   )
-  const userId = subscription.external_reference
+  const reference = parseExternalReference(subscription.external_reference)
+  const userId = reference?.userId
+  const paidPlan = reference?.plan ?? 'FROTA'
   if (!userId) return json({ error: 'Assinatura sem usuário vinculado' }, request, 422)
 
-  const mapped = mercadoPagoStatus(subscription.status)
+  const mapped = mercadoPagoStatus(subscription.status, paidPlan)
   const now = new Date().toISOString()
   await env.DB.batch([
     env.DB.prepare(
@@ -393,6 +757,15 @@ async function handleHttp(request: Request, env: WorkerEnv): Promise<Response> {
 
   if (url.pathname === '/payments/checkout' && request.method === 'POST') {
     return createCheckout(request, env)
+  }
+  if (url.pathname === '/payments/ebooks/checkout' && request.method === 'POST') {
+    return createEbookCheckout(request, env)
+  }
+  if (url.pathname === '/payments/lifetime/checkout' && request.method === 'POST') {
+    return createLifetimeCheckout(request, env)
+  }
+  if (url.pathname === '/payments/ebooks/status' && request.method === 'GET') {
+    return ebookPurchaseStatus(request, env)
   }
   if (url.pathname === '/payments/subscription' && request.method === 'GET') {
     return subscriptionStatus(request, env)
@@ -461,8 +834,20 @@ async function handleHttp(request: Request, env: WorkerEnv): Promise<Response> {
   if (url.pathname === '/reminder' && request.method === 'POST') {
     const { userId, reminder } = await request.json<{ userId: string; reminder: ReminderSync }>()
     if (!userId || !reminder?.id) return json({ error: 'invalid' }, request, 400)
+
+    const existingRaw = await env.REMINDERS.get(`rem:${userId}:${reminder.id}`)
+    const existing = existingRaw ? JSON.parse(existingRaw) as ReminderSync : null
+    const scheduleChanged =
+      !existing ||
+      existing.dataLimite !== reminder.dataLimite ||
+      existing.horaAviso !== reminder.horaAviso
+
     await env.REMINDERS.put(`rem:${userId}:${reminder.id}`, JSON.stringify(reminder))
-    await env.REMINDERS.delete(`sent:${userId}:${reminder.id}:${saoPauloDateParts().date}`)
+
+    if (scheduleChanged) {
+      await env.REMINDERS.delete(`sent:${userId}:${reminder.id}:${saoPauloDateParts().date}`)
+    }
+
     return json({ ok: true }, request)
   }
 

@@ -67,6 +67,8 @@ npm run deploy
 | Método | Rota | Função |
 |---|---|---|
 | POST | `/payments/checkout` | Cria ou reutiliza o checkout mensal |
+| POST | `/payments/ebooks/checkout` | Cria checkout único do pacote de e-books |
+| GET | `/payments/ebooks/status` | Retorna se o pacote de e-books já foi comprado |
 | GET | `/payments/subscription` | Retorna o plano confirmado no D1 |
 | POST | `/payments/cancel` | Cancela a recorrência |
 | POST | `/payments/webhook` | Confirma mudanças enviadas pelo Mercado Pago |

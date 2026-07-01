@@ -6,7 +6,12 @@
   "compatibility_flags": ["nodejs_compat"],
   "vars": {
     "APP_URL": "https://zelluapp.com.br",
-    "PREMIUM_PRICE": "29.90"
+    "LITE_PRICE": "10.50",
+    "FROTA_PRICE": "29.90",
+    "EMPRESARIAL_PRICE": "59.90",
+    "PREMIUM_PRICE": "29.90",
+    "EBOOK_BUNDLE_PRICE": "19.90",
+    "LIFETIME_PERSONAL_PRICE": "49.90"
   },
   "triggers": {
     "crons": ["*/15 * * * *"]

@@ -13,7 +13,14 @@ export interface SubscriptionStatus {
 interface CheckoutResponse {
   active?: boolean
   plan?: PlanoTier
+  productId?: string
   checkoutUrl?: string
+}
+
+export interface EbookPurchaseStatus {
+  active: boolean
+  status: 'ACTIVE' | 'PENDING' | 'REJECTED' | 'INACTIVE'
+  productId: string
 }
 
 async function request<T>(path: string, init?: RequestInit): Promise<T> {
@@ -37,21 +44,28 @@ async function request<T>(path: string, init?: RequestInit): Promise<T> {
 }
 
 export function getSubscriptionStatus(): Promise<SubscriptionStatus> {
-  if (!workerUrl) {
-    return Promise.resolve({
-      active: false,
-      plan: 'FREE',
-      status: 'UNCONFIGURED',
-      nextPaymentAt: null,
-    })
-  }
-  return request<SubscriptionStatus>('/payments/subscription')
+  return request<SubscriptionStatus>('/payments/subscription', { method: 'GET' })
 }
 
-export function createSubscriptionCheckout(): Promise<CheckoutResponse> {
-  return request<CheckoutResponse>('/payments/checkout', { method: 'POST' })
+export function createSubscriptionCheckout(plan: Exclude<PlanoTier, 'FREE'>, returnPath = '/planos'): Promise<CheckoutResponse> {
+  return request<CheckoutResponse>('/payments/checkout', {
+    method: 'POST',
+    body: JSON.stringify({ plan, returnPath }),
+  })
 }
 
 export function cancelSubscription(): Promise<SubscriptionStatus> {
   return request<SubscriptionStatus>('/payments/cancel', { method: 'POST' })
+}
+
+export function createEbookCheckout(): Promise<CheckoutResponse> {
+  return request<CheckoutResponse>('/payments/ebooks/checkout', { method: 'POST' })
+}
+
+export function createLifetimeCheckout(): Promise<CheckoutResponse> {
+  return request<CheckoutResponse>('/payments/lifetime/checkout', { method: 'POST' })
+}
+
+export function getEbookPurchaseStatus(): Promise<EbookPurchaseStatus> {
+  return request<EbookPurchaseStatus>('/payments/ebooks/status', { method: 'GET' })
 }
