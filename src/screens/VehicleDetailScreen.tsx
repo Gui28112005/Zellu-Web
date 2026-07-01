@@ -6,7 +6,7 @@ import {
   Link2, Droplet, Droplets, Bike, Package, Star, Circle, Settings,
   ClipboardList, Sparkles, BatteryCharging, Car, Wrench, Paintbrush,
   Disc3, FileText, CreditCard, Shield, MoreHorizontal, Cog, Bell as BellIcon,
-  AlertTriangle, Clock, CheckCircle2,
+  AlertTriangle, Clock, CheckCircle2, Store, Phone, UserRound,
 } from 'lucide-react'
 import type { LucideIcon } from 'lucide-react'
 import { useForm, Controller } from 'react-hook-form'
@@ -18,7 +18,7 @@ import { Button, BottomSheet, Input, EmptyState } from '@/components/ui'
 import { VehicleIllustration } from '@/components/VehicleIllustration'
 import NewReminderTypeSheet from '@/components/reminders/NewReminderTypeSheet'
 import { useStore } from '@/lib/store'
-import { updateVeiculo, deleteVeiculo } from '@/lib/db'
+import { updateVeiculo, deleteVeiculo, updateLembrete } from '@/lib/db'
 import {
   formatKm,
   getVeiculoEmoji,
@@ -30,7 +30,7 @@ import {
   formatCurrency,
   normalizarMarca,
 } from '@/lib/utils'
-import type { TipoVeiculo, TipoManutencao } from '@/lib/types'
+import type { TipoVeiculo, TipoManutencao, Lembrete } from '@/lib/types'
 
 // ─── constants ───────────────────────────────────────────────────────────────
 
@@ -101,42 +101,54 @@ function daysUntil(dateStr: string): number {
 
 // ─── StatusBar ────────────────────────────────────────────────────────────────
 
-function StatusBar({ lembrete }: { lembrete: import('@/lib/types').Lembrete }) {
+function StatusBar({ lembrete, action }: { lembrete: import('@/lib/types').Lembrete; action?: React.ReactNode }) {
   if (lembrete.concluido) {
     return (
-      <div className="flex items-center gap-1.5 mt-3 pt-3 border-t border-[#1e2d44]">
+      <div className="mt-3 flex items-center justify-between gap-3 border-t border-[#1e2d44] pt-3">
+        <div className="flex min-w-0 items-center gap-1.5">
         <CheckCircle2 size={12} className="text-[#8892a4]" />
         <span className="text-[#8892a4] text-xs">
           Concluído{lembrete.concluidoEm ? ` em ${new Date(lembrete.concluidoEm).toLocaleDateString('pt-BR')}` : ''}
         </span>
+        </div>
+        {action}
       </div>
     )
   }
   if (isLembreteVencido(lembrete)) {
     return (
-      <div className="flex items-center gap-1.5 mt-3 pt-3 border-t border-red-500/20 bg-red-500/5 -mx-4 px-4 -mb-4 pb-3 rounded-b-2xl">
+      <div className="-mx-4 -mb-4 mt-3 flex items-center justify-between gap-3 rounded-b-2xl border-t border-red-500/20 bg-red-500/5 px-4 pb-3 pt-3">
+        <div className="flex min-w-0 items-center gap-1.5">
         <AlertTriangle size={12} className="text-red-400" />
         <span className="text-red-400 text-xs font-medium">
           VENCIDO — {formatDate(lembrete.dataLimite)}
         </span>
+        </div>
+        {action}
       </div>
     )
   }
   const days = daysUntil(lembrete.dataLimite)
   if (days <= 7 && days >= 0) {
     return (
-      <div className="flex items-center gap-1.5 mt-3 pt-3 border-t border-amber-500/20 bg-amber-500/5 -mx-4 px-4 -mb-4 pb-3 rounded-b-2xl">
+      <div className="-mx-4 -mb-4 mt-3 flex items-center justify-between gap-3 rounded-b-2xl border-t border-amber-500/20 bg-amber-500/5 px-4 pb-3 pt-3">
+        <div className="flex min-w-0 items-center gap-1.5">
         <Clock size={12} className="text-amber-400" />
         <span className="text-amber-400 text-xs font-medium">
           {days === 0 ? 'Vence hoje' : `Vence em ${days} dia${days > 1 ? 's' : ''}`}
         </span>
+        </div>
+        {action}
       </div>
     )
   }
   return (
-    <div className="flex items-center gap-1.5 mt-3 pt-3 border-t border-[#1e2d44]">
+    <div className="mt-3 flex items-center justify-between gap-3 border-t border-[#1e2d44] pt-3">
+      <div className="flex min-w-0 items-center gap-1.5">
       <Check size={12} className="text-green-400" />
       <span className="text-green-400 text-xs">Em dia</span>
+      </div>
+      {action}
     </div>
   )
 }
@@ -187,6 +199,11 @@ export default function VehicleDetailScreen({ vehicleId }: VehicleDetailScreenPr
   const [editingKm, setEditingKm] = useState(false)
   const [kmInput, setKmInput] = useState('')
   const [selectedCategoria, setSelectedCategoria] = useState<TipoManutencao | null>(null)
+  const [professionalDialogOpen, setProfessionalDialogOpen] = useState(false)
+  const [selectedReminder, setSelectedReminder] = useState<Lembrete | null>(null)
+  const [professionalName, setProfessionalName] = useState('')
+  const [professionalPhone, setProfessionalPhone] = useState('')
+  const [savingProfessional, setSavingProfessional] = useState(false)
   const categoriasScrollRef = useRef<HTMLDivElement>(null)
 
   const veiculo = veiculos.find((v) => v.id === id)
@@ -232,6 +249,84 @@ export default function VehicleDetailScreen({ vehicleId }: VehicleDetailScreenPr
       return new Date(ay, am - 1, ad).getTime() - new Date(by, bm - 1, bd).getTime()
     })
   }, [pendentes, selectedCategoria])
+
+  const vencidos = useMemo(
+    () => pendentes.filter((l) => {
+      if (!l.dataLimite) return false
+      const [d, m, y] = l.dataLimite.split('/').map(Number)
+      const date = new Date(y, m - 1, d)
+      const today = new Date(); today.setHours(0, 0, 0, 0)
+      return date < today
+    }),
+    [pendentes]
+  )
+
+  const concluidos = useMemo(
+    () => lembretes
+      .filter((l) => l.veiculoId === id && l.concluido)
+      .sort((a, b) => (b.concluidoEm ?? 0) - (a.concluidoEm ?? 0))
+      .slice(0, 5),
+    [lembretes, id]
+  )
+
+  const totalGasto = useMemo(
+    () => lembretes
+      .filter((l) => l.veiculoId === id && l.concluido && l.valor > 0)
+      .reduce((s, l) => s + l.valor, 0),
+    [lembretes, id]
+  )
+
+  const profissionaisCadastrados = useMemo(() => {
+    const map = new Map<string, { nome: string; telefone: string }>()
+    lembretes.forEach((lembrete) => {
+      const nome = lembrete.estabelecimentoNome?.trim()
+      if (!nome) return
+      const telefone = lembrete.estabelecimentoTelefone?.trim() ?? ''
+      const key = `${nome.toLowerCase()}|${telefone}`
+      map.set(key, { nome, telefone })
+    })
+    return Array.from(map.values()).sort((a, b) => a.nome.localeCompare(b.nome))
+  }, [lembretes])
+
+  function openProfessionalDialog(lembrete: Lembrete) {
+    setSelectedReminder(lembrete)
+    setProfessionalName(lembrete.estabelecimentoNome ?? '')
+    setProfessionalPhone(lembrete.estabelecimentoTelefone ?? '')
+    setProfessionalDialogOpen(true)
+  }
+
+  function selectProfessional(professional: { nome: string; telefone: string }) {
+    setProfessionalName(professional.nome)
+    setProfessionalPhone(professional.telefone)
+  }
+
+  async function saveProfessionalLink() {
+    if (!user || !selectedReminder) return
+    const nome = professionalName.trim()
+    const telefone = professionalPhone.trim()
+    if (!nome) {
+      toast.error('Informe o nome do profissional ou comércio.')
+      return
+    }
+
+    setSavingProfessional(true)
+    try {
+      const updated: Lembrete = {
+        ...selectedReminder,
+        estabelecimentoNome: nome,
+        estabelecimentoTelefone: telefone,
+      }
+      await updateLembrete(user.uid, updated)
+      useStore.getState().updateLembreteLocal(updated)
+      toast.success('Profissional vinculado ao aviso.')
+      setProfessionalDialogOpen(false)
+      setSelectedReminder(null)
+    } catch {
+      toast.error('Não foi possível vincular o profissional.')
+    } finally {
+      setSavingProfessional(false)
+    }
+  }
 
   const {
     register,
@@ -352,7 +447,11 @@ export default function VehicleDetailScreen({ vehicleId }: VehicleDetailScreenPr
 
   return (
     <PageTransition className="min-h-full bg-[#070c14]">
-      <div className="w-full max-w-2xl mx-auto px-4 pt-4 pb-6 flex flex-col gap-4">
+      <div className="w-full max-w-screen-xl mx-auto px-4 sm:px-6 pt-4 pb-6">
+        <div className="flex flex-col lg:grid lg:grid-cols-[400px_minmax(0,680px)] lg:gap-8 lg:items-start gap-4">
+
+        {/* ── LEFT COLUMN (hero + actions) ── */}
+        <div className="flex flex-col gap-4 lg:sticky lg:top-4">
 
         {/* ── HERO CARD ── */}
         <motion.div
@@ -433,7 +532,7 @@ export default function VehicleDetailScreen({ vehicleId }: VehicleDetailScreenPr
           </div>
         </motion.div>
 
-        {/* ── EDITAR | RELATÓRIO ── */}
+        {/* ── EDITAR | RELATÓRIO | GUIA ── */}
         <div className="flex gap-3">
           <button
             onClick={openEdit}
@@ -459,6 +558,11 @@ export default function VehicleDetailScreen({ vehicleId }: VehicleDetailScreenPr
           <Bell size={18} />
           Novo Lembrete
         </button>
+
+        </div>{/* end left column */}
+
+        {/* ── RIGHT COLUMN (categorias + lembretes) ── */}
+        <div className="flex flex-col gap-4">
 
         {/* ── CATEGORIAS ── */}
         {categorias.length > 0 && (
@@ -584,7 +688,7 @@ export default function VehicleDetailScreen({ vehicleId }: VehicleDetailScreenPr
                       </div>
 
                       {/* Direita */}
-                      <div className="flex flex-col items-end gap-1 flex-shrink-0">
+                      <div className="flex flex-col items-end gap-2 flex-shrink-0">
                         {lembrete.dataLimite ? (
                           <span className="text-[#8892a4] text-xs">{formatDate(lembrete.dataLimite)}</span>
                         ) : null}
@@ -597,13 +701,74 @@ export default function VehicleDetailScreen({ vehicleId }: VehicleDetailScreenPr
                     </div>
 
                     {/* Status */}
-                    <StatusBar lembrete={lembrete} />
+                    <StatusBar
+                      lembrete={lembrete}
+                      action={
+                        <button
+                          type="button"
+                          onClick={(event) => {
+                            event.stopPropagation()
+                            openProfessionalDialog(lembrete)
+                          }}
+                          className={`flex h-8 flex-shrink-0 items-center gap-1.5 rounded-xl border px-2.5 text-[11px] font-semibold transition active:scale-[0.98] ${
+                            lembrete.estabelecimentoNome
+                              ? 'border-[#22c55e]/25 bg-[#22c55e]/10 text-[#4ade80]'
+                              : 'border-[#4f8df7]/25 bg-[#4f8df7]/10 text-[#70a7ff]'
+                          }`}
+                          aria-label="Vincular profissional"
+                        >
+                          {lembrete.estabelecimentoNome ? <CheckCircle2 size={13} /> : <Store size={13} />}
+                          <span className="hidden sm:inline">
+                            {lembrete.estabelecimentoNome ? 'Vinculado' : 'Vincular'}
+                          </span>
+                        </button>
+                      }
+                    />
                   </motion.div>
                 )
               })}
             </div>
           )}
         </div>
+
+        {/* ── HISTÓRICO RECENTE ── */}
+        {concluidos.length > 0 && (
+          <div>
+            <p className="text-[11px] font-bold text-[#8892a4] tracking-widest uppercase mb-3">
+              Histórico recente
+            </p>
+            <div className="flex flex-col gap-2">
+              {concluidos.map((lembrete) => {
+                const cor = getTipoColor(lembrete.tipo)
+                const Icon = TIPO_ICON[lembrete.tipo]
+                return (
+                  <div
+                    key={lembrete.id}
+                    onClick={() => navigate(`/veiculo/${id}/lembrete/${lembrete.id}`)}
+                    className="bg-[#131e33] border border-[#1e2d44] rounded-2xl p-4 cursor-pointer opacity-70 hover:opacity-90 transition-opacity"
+                  >
+                    <div className="flex items-center gap-3">
+                      <div className="w-9 h-9 rounded-xl flex items-center justify-center flex-shrink-0" style={{ background: cor + '22' }}>
+                        <Icon size={16} style={{ color: cor }} />
+                      </div>
+                      <div className="flex-1 min-w-0">
+                        <p className="text-[#f0f4ff] text-sm font-medium truncate">{lembrete.titulo || getTipoLabel(lembrete.tipo)}</p>
+                        {lembrete.peca && <p className="text-[#8892a4] text-xs truncate">{lembrete.peca}</p>}
+                      </div>
+                      <div className="text-right flex-shrink-0">
+                        {lembrete.valor > 0 && <p className="text-xs font-semibold text-[#34d399]">{formatCurrency(lembrete.valor)}</p>}
+                        {lembrete.dataLimite && <p className="text-[10px] text-[#66758d]">{formatDate(lembrete.dataLimite)}</p>}
+                      </div>
+                    </div>
+                  </div>
+                )
+              })}
+            </div>
+          </div>
+        )}
+
+        </div>{/* end right column */}
+        </div>{/* end grid */}
       </div>
 
       {/* ── EDIT SHEET ── */}
@@ -680,6 +845,106 @@ export default function VehicleDetailScreen({ vehicleId }: VehicleDetailScreenPr
             {deleting ? 'Apagando...' : 'Apagar veículo'}
           </button>
         </form>
+      </BottomSheet>
+
+      <BottomSheet
+        isOpen={professionalDialogOpen}
+        onClose={() => {
+          if (savingProfessional) return
+          setProfessionalDialogOpen(false)
+          setSelectedReminder(null)
+        }}
+        title="Vincular profissional"
+      >
+        <div className="space-y-5">
+          <div className="rounded-2xl border border-[#1e2d44] bg-[#0f1a2e] p-4">
+            <p className="text-sm font-semibold text-[#f0f4ff]">
+              {selectedReminder?.titulo || (selectedReminder ? getTipoLabel(selectedReminder.tipo) : 'Aviso')}
+            </p>
+            <p className="mt-1 text-xs leading-5 text-[#8892a4]">
+              Adicione o comércio ou profissional que vai realizar essa manutenção.
+            </p>
+          </div>
+
+          {profissionaisCadastrados.length > 0 && (
+            <div>
+              <p className="mb-2 text-[11px] font-bold uppercase tracking-[0.18em] text-[#8892a4]">
+                Já cadastrados
+              </p>
+              <div className="flex gap-2 overflow-x-auto pb-1 no-scrollbar">
+                {profissionaisCadastrados.map((professional) => {
+                  const active =
+                    professionalName.trim() === professional.nome &&
+                    professionalPhone.trim() === professional.telefone
+                  return (
+                    <button
+                      key={`${professional.nome}-${professional.telefone}`}
+                      type="button"
+                      onClick={() => selectProfessional(professional)}
+                      className={`min-w-[180px] rounded-2xl border p-3 text-left transition active:scale-[0.98] ${
+                        active
+                          ? 'border-[#4f8df7]/60 bg-[#4f8df7]/15'
+                          : 'border-[#1e2d44] bg-[#101a2d]'
+                      }`}
+                    >
+                      <div className="flex items-center gap-2">
+                        <span className="flex h-8 w-8 items-center justify-center rounded-xl bg-[#4f8df7]/12 text-[#70a7ff]">
+                          <UserRound size={15} />
+                        </span>
+                        <div className="min-w-0">
+                          <p className="truncate text-sm font-semibold text-[#f0f4ff]">{professional.nome}</p>
+                          <p className="truncate text-xs text-[#8892a4]">
+                            {professional.telefone || 'Sem telefone'}
+                          </p>
+                        </div>
+                      </div>
+                    </button>
+                  )
+                })}
+              </div>
+            </div>
+          )}
+
+          <div className="space-y-4">
+            <Input
+              label="Nome do profissional ou comércio"
+              placeholder="Ex: Oficina Central"
+              value={professionalName}
+              onChange={(event) => setProfessionalName(event.target.value)}
+              leftIcon={<Store size={17} />}
+            />
+            <Input
+              label="Telefone"
+              placeholder="Ex: (11) 99999-9999"
+              value={professionalPhone}
+              onChange={(event) => setProfessionalPhone(event.target.value)}
+              leftIcon={<Phone size={17} />}
+            />
+          </div>
+
+          <div className="flex gap-3">
+            <Button
+              type="button"
+              variant="ghost"
+              fullWidth
+              disabled={savingProfessional}
+              onClick={() => {
+                setProfessionalDialogOpen(false)
+                setSelectedReminder(null)
+              }}
+            >
+              Cancelar
+            </Button>
+            <Button
+              type="button"
+              fullWidth
+              loading={savingProfessional}
+              onClick={() => void saveProfessionalLink()}
+            >
+              Salvar vínculo
+            </Button>
+          </div>
+        </div>
       </BottomSheet>
 
       <NewReminderTypeSheet

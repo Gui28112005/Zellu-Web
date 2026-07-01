@@ -1,10 +1,13 @@
 import { useMemo } from 'react'
-import { AlertTriangle, CalendarClock, Car, CheckCircle2, ChevronRight, Gauge } from 'lucide-react'
+import { AlertTriangle, CalendarClock, Car, CheckCircle2, ChevronRight, Download, Gauge } from 'lucide-react'
 import { useNavigate } from 'react-router-dom'
+import toast from 'react-hot-toast'
 import { VehicleIllustration } from '@/components/VehicleIllustration'
 import { useStore } from '@/lib/store'
 import type { Lembrete, Veiculo } from '@/lib/types'
 import { formatKm, getVeiculoLabel, normalizarMarca } from '@/lib/utils'
+import { saveFleetOverviewReport } from '@/lib/pdfReports'
+
 
 type AttentionLevel = 'critical' | 'attention' | 'ok'
 
@@ -143,14 +146,57 @@ export default function FleetOverviewScreen() {
         ? 'Sua frota está em dia. Continue registrando serviços e quilometragem para manter a análise atualizada.'
         : 'Cadastre veículos e avisos para receber uma análise automática da saúde da frota.'
 
+  const handleExportPdf = async () => {
+    try {
+      await saveFleetOverviewReport({
+        totalVehicles: vehicles.length,
+        criticalCount,
+        attentionCount,
+        summary: fleetSummary,
+        rows: overview.map(({ vehicle, pending, overdueCount, dueSoonCount, level, nextReminder, healthScore }) => {
+          const subtitle = [normalizarMarca(vehicle.marca), vehicle.modelo, vehicle.ano]
+            .filter(Boolean)
+            .join(' - ') || getVeiculoLabel(vehicle.tipoVeiculo)
+
+          return {
+            nome: vehicle.nome || 'Veiculo',
+            marcaModelo: subtitle,
+            kmAtual: vehicle.semControleKm ? 'Sem controle' : formatKm(vehicle.kmAtual),
+            pendentes: pending.length,
+            vencidos: overdueCount,
+            proximos: dueSoonCount,
+            saude: healthScore,
+            prioridade: levelStyles[level].label,
+            proximoAviso: nextReminder
+              ? `${nextReminder.titulo || 'Aviso'} - ${formatReminderDeadline(nextReminder)}`
+              : 'Nenhum aviso pendente',
+          }
+        }),
+      })
+      toast.success('Relatorio PDF gerado.')
+    } catch {
+      toast.error('Nao foi possivel gerar o PDF.')
+    }
+  }
+
   return (
     <main className="mx-auto w-full max-w-2xl px-4 pb-12 pt-6 sm:px-6">
-      <header>
+      <header className="flex flex-col gap-4 sm:flex-row sm:items-start sm:justify-between">
+        <div>
         <p className="text-[11px] font-bold uppercase tracking-[0.18em] text-[#70a7ff]">Zellu Premium</p>
         <h1 className="mt-2 text-2xl font-semibold tracking-tight text-[#f4f7ff]">Visão geral dos veículos</h1>
         <p className="mt-2 max-w-lg text-sm leading-6 text-[#8fa0b9]">
           Veículos ordenados por prioridade para você agir primeiro onde a frota precisa de mais atenção.
         </p>
+        </div>
+        <button
+          type="button"
+          onClick={handleExportPdf}
+          className="flex h-11 shrink-0 items-center justify-center gap-2 rounded-2xl border border-[#4f8df7]/30 bg-[#4f8df7]/10 px-4 text-sm font-semibold text-[#8bb9ff] transition hover:bg-[#4f8df7]/15 active:scale-[0.98]"
+        >
+          <Download size={16} />
+          Gerar PDF
+        </button>
       </header>
 
       <section className="mt-6 grid grid-cols-3 gap-2" aria-label="Resumo da frota">

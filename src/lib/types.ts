@@ -37,7 +37,7 @@ export type TipoManutencao =
   | 'SEGURO'
   | 'OUTROS'
 
-export type PlanoTier = 'FREE' | 'LITE' | 'FROTA'
+export type PlanoTier = 'FREE' | 'LITE' | 'FROTA' | 'EMPRESARIAL'
 
 export interface Veiculo {
   id: string
@@ -70,6 +70,7 @@ export interface Lembrete {
   valor: number
   horaAviso: string
   estabelecimentoNome: string
+  estabelecimentoTelefone?: string
   concluido: boolean
   concluidoEm?: number
   userId: string
@@ -114,7 +115,10 @@ export interface RegistroPneu {
   modelo: string
   kmInstalado: number
   kmVidaUtil: number
+  kmFinal?: number
+  custo?: number
   dataInstalacao: string
+  dataRemocao?: string
   userId: string
   criadoEm: number
 }
@@ -141,6 +145,7 @@ export interface RegistroRota {
   receitaTotal: number
   motorista: string
   data: string
+  veiculoId?: string
   userId: string
   criadoEm: number
 }
@@ -152,23 +157,60 @@ export interface ItemEstoque {
   quantidade: number
   quantidadeMinima: number
   precoUnitario: number
+  codigoBarras?: string
   userId: string
+  criadoEm: number
+}
+
+export type TipoMovimentacao = 'ENTRADA' | 'SAIDA' | 'AJUSTE'
+
+export interface MovimentacaoEstoque {
+  id: string
+  itemId: string
+  itemNome: string
+  tipo: TipoMovimentacao
+  quantidade: number
+  detalhes?: string
+  criadoEm: number
+}
+
+export type CategoriaEstoque =
+  | 'combustivel'
+  | 'oleo_lubrificantes'
+  | 'consumiveis'
+  | 'limpeza'
+  | 'epi_seguranca'
+  | 'outros'
+
+export type CategoriaGasto = 'combustivel' | 'pedagio' | 'estacionamento' | 'alimentacao' | 'outros'
+
+export interface GastoViagem {
+  id: string
+  categoria: CategoriaGasto
+  descricao: string
+  valor: number
+  notaImagem?: string
+  notaNome?: string
   criadoEm: number
 }
 
 export interface RegistroViagem {
   id: string
   veiculoId: string
-  data: string
+  nome?: string
+  data?: string
+  dataInicio?: string
+  dataFim?: string
   origem: string
   destino: string
   distanciaKm: number
-  finalidade: string
-  combustivel: number
-  pedagio: number
-  estacionamento: number
-  alimentacao: number
-  outros: number
+  responsavel?: string
+  acompanhantes?: string
+  kmSaida?: number
+  kmFinal?: number
+  finalizada?: boolean
+  finalidade?: string
+  gastos: GastoViagem[]
   userId: string
   criadoEm: number
 }

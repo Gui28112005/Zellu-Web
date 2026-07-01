@@ -8,6 +8,29 @@ export function cn(...inputs: ClassValue[]): string {
   return twMerge(clsx(inputs))
 }
 
+// ─── Color names ─────────────────────────────────────────────────────────────
+
+const COR_NOMES: Record<string, string> = {
+  '#ef4444': 'Vermelho',
+  '#f97316': 'Laranja',
+  '#f59e0b': 'Amarelo',
+  '#22c55e': 'Verde',
+  '#06b6d4': 'Ciano',
+  '#3b82f6': 'Azul',
+  '#4f8df7': 'Azul',
+  '#60a5fa': 'Azul claro',
+  '#8b5cf6': 'Roxo',
+  '#ec4899': 'Rosa',
+  '#ffffff': 'Branco',
+  '#f8fafc': 'Branco',
+  '#94a3b8': 'Cinza',
+  '#1e293b': 'Grafite',
+}
+
+export function getCorNome(hex: string): string {
+  return COR_NOMES[hex.toLowerCase()] ?? hex
+}
+
 // ─── Date & formatting ────────────────────────────────────────────────────────
 
 /**

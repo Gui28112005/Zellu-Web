@@ -2,6 +2,7 @@ import { useMemo, useState } from 'react'
 import { useNavigate, useParams, useSearchParams } from 'react-router-dom'
 import {
   Bike,
+  BookOpen,
   Car,
   Circle,
   ClipboardList,
@@ -140,6 +141,20 @@ export default function ReminderCategoryScreen() {
           <h1 className="mt-2 text-3xl font-semibold tracking-tight">{title}</h1>
           <p className="mx-auto mt-2 max-w-sm text-sm leading-relaxed text-[#9aa8bd]">{subtitle}</p>
         </div>
+
+        <button
+          type="button"
+          onClick={() => navigate('/guia-manutencao')}
+          className="mb-4 flex w-full items-center gap-3 rounded-2xl border border-[#22c55e]/25 bg-[#22c55e]/8 px-4 py-3 text-left transition-all hover:bg-[#22c55e]/12 active:scale-[0.98]"
+        >
+          <span className="flex h-9 w-9 shrink-0 items-center justify-center rounded-xl bg-[#22c55e]/15">
+            <BookOpen size={18} className="text-[#22c55e]" />
+          </span>
+          <span className="flex-1 min-w-0">
+            <span className="block text-xs font-medium text-[#9aa8bd]">Não sabe o que lembrar?</span>
+            <span className="block text-sm font-semibold text-[#22c55e]">Ver Guia de Manutenção →</span>
+          </span>
+        </button>
 
         <div className="grid grid-cols-2 gap-3 pb-6 sm:grid-cols-3">
           {visibleCategories.map((tipo) => {

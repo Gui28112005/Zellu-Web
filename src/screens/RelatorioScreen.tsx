@@ -8,18 +8,13 @@ import {
   Fuel,
   History,
   Info,
-  Share2,
   Tag,
   Wrench,
 } from 'lucide-react'
 
-import { toast } from 'react-hot-toast'
-import jsPDF from 'jspdf'
-import autoTable from 'jspdf-autotable'
 import { PageTransition } from '@/components/layout/PageTransition'
-import { VehicleIllustration } from '@/components/VehicleIllustration'
 import { useStore } from '@/lib/store'
-import { formatCurrency, formatDate, formatKm, normalizarMarca } from '@/lib/utils'
+import { formatCurrency, formatDate, formatKm, normalizarMarca, getCorNome } from '@/lib/utils'
 import type { Lembrete, Veiculo } from '@/lib/types'
 import { getPreco, getFipeTipo, getMarcas, getModelos, getAnos } from '@/lib/fipe'
 import { updateVeiculo } from '@/lib/db'
@@ -111,6 +106,219 @@ function reminderTimestamp(reminder: Lembrete) {
   return reminder.concluidoEm ?? reminder.criadoEm
 }
 
+// ── Mapa de manutenção ────────────────────────────────────────────────────────
+import type { TipoManutencao } from '@/lib/types'
+
+type ZoneStatus = 'ok' | 'warning' | 'critical'
+
+function zoneStatus(
+  lembretes: Lembrete[],
+  veiculoId: string,
+  tipos: TipoManutencao[],
+  hoje: string,
+): ZoneStatus {
+  const rel = lembretes.filter(
+    (l) => !l.concluido && l.veiculoId === veiculoId && tipos.includes(l.tipo),
+  )
+  if (rel.length === 0) return 'ok'
+  return rel.some((l) => l.dataLimite && l.dataLimite < hoje) ? 'critical' : 'warning'
+}
+
+function zoneColor(s: ZoneStatus, dim = false) {
+  if (s === 'critical') return dim ? '#f87171aa' : '#f87171'
+  if (s === 'warning') return dim ? '#fbbf24aa' : '#fbbf24'
+  return dim ? '#4ade80aa' : '#4ade80'
+}
+
+function zoneFill(s: ZoneStatus) {
+  if (s === 'critical') return '#f8717116'
+  if (s === 'warning') return '#fbbf2412'
+  return '#4ade8012'
+}
+
+function MaintenanceMap({
+  lembretes,
+  veiculoId,
+}: {
+  lembretes: Lembrete[]
+  veiculoId: string
+}) {
+  const hoje = new Date().toISOString().split('T')[0]
+  const st = (tipos: TipoManutencao[]) => zoneStatus(lembretes, veiculoId, tipos, hoje)
+
+  const motor   = st(['OLEO', 'REVISAO', 'MECANICA'])
+  const bateria = st(['BATERIA'])
+  const freio   = st(['FREIO'])
+  const pneu    = st(['PNEU'])
+  const cambio  = st(['TRANSMISSAO'])
+  const carBody = st(['FUNILARIA', 'VIDROS'])
+  const docs    = st(['LICENCIAMENTO', 'IPVA', 'SEGURO'])
+
+  function Chip({ x, y, label, status }: { x: number; y: number; label: string; status: ZoneStatus }) {
+    const c = zoneColor(status)
+    const w = label.length * 6.2 + 14
+    return (
+      <g>
+        <rect x={x - w / 2} y={y - 9} width={w} height={17} rx={5}
+          fill={status === 'ok' ? '#0d1a2e' : zoneFill(status)}
+          stroke={c} strokeWidth={status === 'ok' ? 1 : 1.5} />
+        <text x={x} y={y + 3.5} textAnchor="middle" fontSize="8" fill={c} fontWeight="700"
+          style={{ fontFamily: 'system-ui, sans-serif', letterSpacing: '0.03em' }}>
+          {label}
+        </text>
+      </g>
+    )
+  }
+
+  function SideLabel({ x, y, label, status }: { x: number; y: number; label: string; status: ZoneStatus }) {
+    const c = zoneColor(status)
+    return (
+      <text x={x} y={y} textAnchor="middle" fontSize="8" fill={c} fontWeight="700"
+        style={{ fontFamily: 'system-ui, sans-serif' }}>
+        {label}
+      </text>
+    )
+  }
+
+  function Book({ x, y, label, status }: { x: number; y: number; label: string; status: ZoneStatus }) {
+    const c = zoneColor(status)
+    const f = zoneFill(status)
+    return (
+      <g>
+        {/* Capa do livro */}
+        <rect x={x} y={y} width={20} height={26} rx={3}
+          fill={f} stroke={c} strokeWidth="1.5" />
+        {/* Lombada */}
+        <rect x={x} y={y} width={4} height={26} rx={3}
+          fill={c + '55'} stroke={c} strokeWidth="0.5" />
+        {/* Linhas de páginas */}
+        <line x1={x + 6} y1={y + 7}  x2={x + 18} y2={y + 7}  stroke={c} strokeWidth="1" opacity="0.5" />
+        <line x1={x + 6} y1={y + 11} x2={x + 18} y2={y + 11} stroke={c} strokeWidth="1" opacity="0.5" />
+        <line x1={x + 6} y1={y + 15} x2={x + 18} y2={y + 15} stroke={c} strokeWidth="1" opacity="0.5" />
+        <line x1={x + 6} y1={y + 19} x2={x + 18} y2={y + 19} stroke={c} strokeWidth="1" opacity="0.5" />
+        {/* Label */}
+        <text x={x + 10} y={y + 35} textAnchor="middle" fontSize="7.5" fill={c} fontWeight="700"
+          style={{ fontFamily: 'system-ui, sans-serif' }}>
+          {label}
+        </text>
+      </g>
+    )
+  }
+
+  return (
+    <div className="mt-3 rounded-2xl bg-[#070d1c] py-3">
+      <svg viewBox="0 0 300 235" className="mx-auto w-full max-w-[280px]">
+
+        {/* ── Carro ── */}
+        <rect x={95} y={22} width={110} height={148} rx={17}
+          fill="#0b1528" stroke={zoneColor(carBody)} strokeWidth={carBody === 'ok' ? 1.5 : 2.5} />
+
+        {/* Zona motor */}
+        <rect x={102} y={28} width={96} height={50} rx={10}
+          fill={zoneFill(motor)} stroke={zoneColor(motor)} strokeWidth={motor === 'ok' ? 0 : 1.5} />
+
+        {/* Para-brisa */}
+        <rect x={105} y={30} width={90} height={24} rx={7} fill="#162035" opacity="0.9" />
+
+        {/* Bateria — quadrado dentro do motor (canto superior direito) */}
+        <rect x={177} y={32} width={20} height={14} rx={3}
+          fill={bateria === 'ok' ? '#162035' : zoneFill(bateria)}
+          stroke={zoneColor(bateria)} strokeWidth="1.5" />
+        <text x={187} y={42} textAnchor="middle" fontSize="6.5" fill={zoneColor(bateria)} fontWeight="700"
+          style={{ fontFamily: 'system-ui, sans-serif' }}>
+          BAT
+        </text>
+
+        {/* Linha do capô */}
+        <line x1={95} y1={78} x2={205} y2={78} stroke="#1e3050" strokeWidth="1" />
+
+        {/* Zona câmbio */}
+        <rect x={120} y={85} width={60} height={36} rx={9}
+          fill={zoneFill(cambio)} stroke={zoneColor(cambio)} strokeWidth={cambio === 'ok' ? 0.8 : 1.5} />
+
+        {/* Linha porta-malas */}
+        <line x1={95} y1={122} x2={205} y2={122} stroke="#1e3050" strokeWidth="1" />
+
+        {/* Vigia traseiro */}
+        <rect x={105} y={125} width={90} height={18} rx={5} fill="#162035" opacity="0.7" />
+
+        {/* Porta-malas — STEP */}
+        <rect x={102} y={145} width={96} height={20} rx={7}
+          fill={zoneFill(docs)} stroke={zoneColor(docs)} strokeWidth={docs === 'ok' ? 0.8 : 1.5} />
+        <text x={150} y={158} textAnchor="middle" fontSize="7.5" fill={zoneColor(docs)} fontWeight="700"
+          style={{ fontFamily: 'system-ui, sans-serif' }}>
+          STEP
+        </text>
+
+        {/* ── Rodas ── */}
+        {/* DE */}
+        <rect x={60} y={35} width={25} height={38} rx={6}
+          fill={pneu === 'ok' ? '#101d32' : zoneFill(pneu)}
+          stroke={zoneColor(pneu)} strokeWidth="1.8" />
+        {freio !== 'ok' && (
+          <circle cx={72} cy={54} r={7} fill="none" stroke={zoneColor(freio)} strokeWidth="1.5" strokeDasharray="3.5 2" />
+        )}
+
+        {/* DD */}
+        <rect x={215} y={35} width={25} height={38} rx={6}
+          fill={pneu === 'ok' ? '#101d32' : zoneFill(pneu)}
+          stroke={zoneColor(pneu)} strokeWidth="1.8" />
+        {freio !== 'ok' && (
+          <circle cx={228} cy={54} r={7} fill="none" stroke={zoneColor(freio)} strokeWidth="1.5" strokeDasharray="3.5 2" />
+        )}
+
+        {/* TE */}
+        <rect x={60} y={106} width={25} height={38} rx={6}
+          fill={pneu === 'ok' ? '#101d32' : zoneFill(pneu)}
+          stroke={zoneColor(pneu)} strokeWidth="1.8" />
+        {freio !== 'ok' && (
+          <circle cx={72} cy={125} r={7} fill="none" stroke={zoneColor(freio)} strokeWidth="1.5" strokeDasharray="3.5 2" />
+        )}
+
+        {/* TD */}
+        <rect x={215} y={106} width={25} height={38} rx={6}
+          fill={pneu === 'ok' ? '#101d32' : zoneFill(pneu)}
+          stroke={zoneColor(pneu)} strokeWidth="1.8" />
+        {freio !== 'ok' && (
+          <circle cx={228} cy={125} r={7} fill="none" stroke={zoneColor(freio)} strokeWidth="1.5" strokeDasharray="3.5 2" />
+        )}
+
+        {/* ── Chips de zona ── */}
+        <Chip x={150} y={54} label="MOTOR" status={motor} />
+        <Chip x={150} y={103} label="CÂMBIO" status={cambio} />
+
+        {/* Labels de posição das rodas */}
+        <text x={72}  y={29}  textAnchor="middle" fontSize="7.5" fill="#5a82a8" fontWeight="700">DE</text>
+        <text x={228} y={29}  textAnchor="middle" fontSize="7.5" fill="#5a82a8" fontWeight="700">DD</text>
+        <text x={72}  y={152} textAnchor="middle" fontSize="7.5" fill="#5a82a8" fontWeight="700">TE</text>
+        <text x={228} y={152} textAnchor="middle" fontSize="7.5" fill="#5a82a8" fontWeight="700">TD</text>
+
+        {/* Labels laterais */}
+        <SideLabel x={37}  y={54} label="PNEU"  status={pneu} />
+        <SideLabel x={37}  y={65} label="FREIO" status={freio} />
+        <SideLabel x={263} y={54} label="PNEU"  status={pneu} />
+        <SideLabel x={263} y={65} label="FREIO" status={freio} />
+
+        {/* ── Livros lado a lado, abaixo e afastados do carro ── */}
+        {/* Livro 1 — IPVA */}
+        <Book x={118} y={178} label="IPVA" status={docs} />
+        {/* Livro 2 — LIC */}
+        <Book x={144} y={178} label="LIC"  status={docs} />
+      </svg>
+
+      {/* Legenda */}
+      <div className="mt-1 flex items-center justify-center gap-5">
+        {([['#4ade80', 'Em dia'], ['#fbbf24', 'Pendente'], ['#f87171', 'Atrasado']] as [string, string][]).map(([color, label]) => (
+          <div key={label} className="flex items-center gap-1.5">
+            <div className="h-2.5 w-2.5 rounded-full" style={{ backgroundColor: color }} />
+            <span className="text-[11px] text-[#3d5370]">{label}</span>
+          </div>
+        ))}
+      </div>
+    </div>
+  )
+}
+
 export default function RelatorioScreen() {
   const { veiculoId } = useParams<{ veiculoId: string }>()
   const navigate = useNavigate()
@@ -128,6 +336,7 @@ export default function RelatorioScreen() {
       .then((p) => setFipeValor(p.Valor))
       .catch(() => setFipeValor(null))
   }, [veiculo?.id])
+
 
   // ── Auto-vinculação FIPE ─────────────────────────────────────────────────────
   const fipeTipoVeiculo = veiculo ? getFipeTipo(veiculo.tipoVeiculo) : null
@@ -217,133 +426,6 @@ export default function RelatorioScreen() {
     return reminder?.dataLimite ? formatDate(reminder.dataLimite) : 'N/A'
   }
 
-  const handleShare = async () => {
-    if (!veiculo) return
-
-    const doc = new jsPDF({ orientation: 'portrait', unit: 'mm', format: 'a4' })
-    const pageW = doc.internal.pageSize.getWidth()
-    const margin = 16
-    let y = 20
-
-    // ── Header ──────────────────────────────────────────────────────────
-    doc.setFillColor(15, 26, 44)
-    doc.rect(0, 0, pageW, 38, 'F')
-    doc.setTextColor(240, 244, 255)
-    doc.setFontSize(20)
-    doc.setFont('helvetica', 'bold')
-    doc.text('Zellu', margin, 16)
-    doc.setFontSize(10)
-    doc.setFont('helvetica', 'normal')
-    doc.setTextColor(136, 152, 173)
-    doc.text('Gestão veicular inteligente', margin, 23)
-    doc.setFontSize(12)
-    doc.setTextColor(240, 244, 255)
-    doc.text(`Relatório — ${veiculo.nome}`, margin, 32)
-    const dateStr = new Date().toLocaleDateString('pt-BR', { day: '2-digit', month: 'long', year: 'numeric' })
-    doc.setFontSize(9)
-    doc.setTextColor(136, 152, 173)
-    doc.text(dateStr, pageW - margin, 32, { align: 'right' })
-
-    y = 48
-
-    // ── Resumo ───────────────────────────────────────────────────────────
-    autoTable(doc, {
-      startY: y,
-      head: [['Resumo', '']],
-      body: [
-        ['Marca / Modelo', [normalizarMarca(veiculo.marca), veiculo.modelo].filter(Boolean).join(' · ') || '—'],
-        ['KM atual', veiculo.semControleKm ? 'Sem controle' : formatKm(veiculo.kmAtual)],
-        ['Saúde', overdueCount ? `${overdueCount} atrasado${overdueCount > 1 ? 's' : ''}` : 'Em dia'],
-        [`Total ${currentYear}`, formatCurrency(totalYear)],
-        [`Total ${String(currentMonth + 1).padStart(2, '0')}/${currentYear}`, formatCurrency(totalMonth)],
-        ['Próx. serviço', nextService ? formatDate(nextService) : '—'],
-        ['Mantenedor', veiculo.proprietario || '—'],
-      ],
-      theme: 'grid',
-      headStyles: { fillColor: [26, 41, 64], textColor: [219, 231, 248], fontSize: 10, fontStyle: 'bold' },
-      bodyStyles: { fontSize: 9, textColor: [30, 30, 60] },
-      columnStyles: { 0: { fontStyle: 'bold', cellWidth: 60 } },
-      margin: { left: margin, right: margin },
-    })
-
-    y = (doc as any).lastAutoTable.finalY + 10
-
-    // ── Situação legal ───────────────────────────────────────────────────
-    autoTable(doc, {
-      startY: y,
-      head: [['IPVA', 'Licenciamento', 'Seguro']],
-      body: [[legalValue('IPVA'), legalValue('LICENCIAMENTO'), legalValue('SEGURO')]],
-      theme: 'grid',
-      headStyles: { fillColor: [26, 41, 64], textColor: [219, 231, 248], fontSize: 10, fontStyle: 'bold', halign: 'center' },
-      bodyStyles: { fontSize: 10, halign: 'center', textColor: [30, 30, 60] },
-      margin: { left: margin, right: margin },
-    })
-
-    y = (doc as any).lastAutoTable.finalY + 10
-
-    // ── Registros (concluídos) ────────────────────────────────────────────
-    if (completed.length > 0) {
-      autoTable(doc, {
-        startY: y,
-        head: [['Registros concluídos', 'Data', 'Valor']],
-        body: completed.map((item) => [
-          item.titulo,
-          item.dataLimite ? formatDate(item.dataLimite) : '—',
-          formatCurrency(item.valor),
-        ]),
-        theme: 'striped',
-        headStyles: { fillColor: [26, 41, 64], textColor: [219, 231, 248], fontSize: 10, fontStyle: 'bold' },
-        bodyStyles: { fontSize: 9, textColor: [30, 30, 60] },
-        columnStyles: { 2: { halign: 'right' } },
-        margin: { left: margin, right: margin },
-      })
-      y = (doc as any).lastAutoTable.finalY + 10
-    }
-
-    // ── Avisos pendentes ─────────────────────────────────────────────────
-    if (pending.length > 0) {
-      autoTable(doc, {
-        startY: y,
-        head: [['Avisos pendentes', 'Data limite', 'KM limite']],
-        body: pending.map((item) => [
-          item.titulo,
-          item.dataLimite ? formatDate(item.dataLimite) : '—',
-          item.kmLimite || '—',
-        ]),
-        theme: 'striped',
-        headStyles: { fillColor: [26, 41, 64], textColor: [219, 231, 248], fontSize: 10, fontStyle: 'bold' },
-        bodyStyles: { fontSize: 9, textColor: [30, 30, 60] },
-        margin: { left: margin, right: margin },
-      })
-    }
-
-    // ── Footer ───────────────────────────────────────────────────────────
-    const pageCount = (doc.internal as any).getNumberOfPages()
-    for (let i = 1; i <= pageCount; i++) {
-      doc.setPage(i)
-      doc.setFontSize(8)
-      doc.setTextColor(136, 152, 173)
-      doc.text(`Zellu — zellu.app  ·  Página ${i}/${pageCount}`, pageW / 2, doc.internal.pageSize.getHeight() - 8, { align: 'center' })
-    }
-
-    const filename = `zellu-relatorio-${veiculo.nome.replace(/\s+/g, '-').toLowerCase()}.pdf`
-    const blob = doc.output('blob')
-    const file = new File([blob], filename, { type: 'application/pdf' })
-
-    try {
-      if (navigator.canShare?.({ files: [file] })) {
-        await navigator.share({ files: [file], title: `Relatório — ${veiculo.nome}` })
-      } else {
-        doc.save(filename)
-        toast.success('PDF gerado!')
-      }
-    } catch (err) {
-      if ((err as DOMException).name !== 'AbortError') {
-        doc.save(filename)
-        toast.success('PDF gerado!')
-      }
-    }
-  }
 
   if (!veiculo) {
     return (
@@ -361,27 +443,41 @@ export default function RelatorioScreen() {
   return (
     <PageTransition className="min-h-full bg-[#070c14] text-[#f0f4ff]">
       <div className="mx-auto flex w-full max-w-2xl flex-col gap-5 px-4 pb-8 pt-5">
-        <section className="flex flex-col items-center py-2">
-          <h1 className="text-3xl font-semibold tracking-tight">{veiculo.nome}</h1>
-          <div className="mt-2 h-40 w-full max-w-sm">
-            <VehicleIllustration tipo={veiculo.tipoVeiculo} className="h-full w-full object-contain" />
+        {/* ── Hero card ── */}
+        <section className="relative overflow-hidden rounded-3xl border border-[#1a2d48] bg-[#070d1c]">
+          {/* Glow com a cor do veículo */}
+          <div
+            className="pointer-events-none absolute inset-0"
+            style={{
+              background: `radial-gradient(ellipse 70% 50% at 50% 100%, ${veiculo.cor}30 0%, transparent 70%)`,
+            }}
+          />
+          {/* Linha colorida no topo */}
+          <div className="h-[3px] w-full" style={{ background: `linear-gradient(90deg, transparent, ${veiculo.cor}, transparent)` }} />
+
+          <div className="px-5 pb-5 pt-4">
+            {/* Nome + marca/modelo */}
+            <h1 className="text-center text-2xl font-bold tracking-tight text-[#f4f7ff]">{veiculo.nome}</h1>
+            <p className="mt-0.5 text-center text-sm text-[#4a6480]">
+              {[normalizarMarca(veiculo.marca), veiculo.modelo, veiculo.ano].filter(Boolean).join(' · ')}
+            </p>
+
+            {/* Mapa de manutenção */}
+            <MaintenanceMap
+              lembretes={lembretes}
+              veiculoId={veiculoId ?? ''}
+            />
+
           </div>
         </section>
 
-        <div className="grid grid-cols-2 gap-3">
+        <div className="grid grid-cols-1 gap-3">
           <button
             onClick={() => navigate(`/veiculo/${veiculoId}/abastecimento`)}
             className="flex h-14 items-center justify-center gap-2 rounded-2xl bg-gradient-to-r from-[#2563eb] to-[#4f8df7] text-sm font-bold text-white shadow-lg shadow-blue-500/15 active:scale-[0.98]"
           >
             <Fuel size={18} />
             Ver consumo
-          </button>
-          <button
-            onClick={handleShare}
-            className="flex h-14 items-center justify-center gap-2 rounded-2xl border border-[#60a5fa]/30 bg-[#60a5fa]/15 text-sm font-bold text-[#dbeafe] active:scale-[0.98]"
-          >
-            <Share2 size={18} />
-            Compartilhar
           </button>
         </div>
 
@@ -443,7 +539,7 @@ export default function RelatorioScreen() {
           <div className="px-5">
             <DetailRow
               label="Cor"
-              value={<span className="inline-flex items-center gap-2"><i className="h-3 w-3 rounded-full border border-white/20" style={{ backgroundColor: veiculo.cor }} />{veiculo.cor || 'N/A'}</span>}
+              value={<span className="inline-flex items-center gap-2"><i className="h-3 w-3 rounded-full border border-white/20" style={{ backgroundColor: veiculo.cor }} />{getCorNome(veiculo.cor) || 'N/A'}</span>}
             />
             <DetailRow label="Modelo" value={veiculo.modelo || 'N/A'} />
             <DetailRow label="Tipo" value={veiculo.tipoVeiculo.replace(/_/g, ' ')} />
