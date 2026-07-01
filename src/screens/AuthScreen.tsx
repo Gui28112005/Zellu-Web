@@ -174,10 +174,10 @@ export default function AuthScreen() {
           transition={{ duration: 4, repeat: Infinity, ease: 'easeInOut' }}
         >
           <img
-            src="/zellu-logo.png"
+            src="/pwa-192x192.png"
             alt="Logo Zellu"
-            width="730"
-            height="720"
+            width="192"
+            height="192"
             className="relative h-36 w-36 rounded-[30px] border border-[#7dd3fc]/25 object-cover sm:h-40 sm:w-40"
           />
         </motion.div>

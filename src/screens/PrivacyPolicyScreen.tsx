@@ -1,7 +1,7 @@
 import { ShieldCheck } from 'lucide-react'
 import { LegalDocument, type LegalSection } from '@/components/legal/LegalDocument'
 
-const sections: LegalSection[] = [
+export const privacyPolicySections: LegalSection[] = [
   {
     title: 'Quem somos e escopo',
     paragraphs: [
@@ -14,7 +14,7 @@ const sections: LegalSection[] = [
     items: [
       'Conta e autenticação: nome, e-mail, identificadores de usuário e dados técnicos de login.',
       'Dados de uso: veículos, lembretes, despesas, histórico de manutenção, viagens, itens de estoque, contatos vinculados, preferências e interações com recursos inteligentes ou IA.',
-      'Permissões sensíveis, somente com consentimento: localização, câmera e notificações.',
+      'Permissões sensíveis, somente com consentimento: notificações para lembretes, vencimentos e avisos importantes.',
       'Dados técnicos: versão do app, dispositivo, logs essenciais de operação e segurança.',
     ],
   },
@@ -121,7 +121,7 @@ export default function PrivacyPolicyScreen() {
       title="Política de Privacidade"
       description="Esta política descreve como o Zellu trata dados pessoais no app e em serviços relacionados, em conformidade com a LGPD (Lei 13.709/2018)."
       icon={ShieldCheck}
-      sections={sections}
+      sections={privacyPolicySections}
       updatedAt="12 de junho de 2026"
     />
   )

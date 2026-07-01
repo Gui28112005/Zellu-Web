@@ -1,7 +1,7 @@
 import { ScrollText } from 'lucide-react'
 import { LegalDocument, type LegalSection } from '@/components/legal/LegalDocument'
 
-const sections: LegalSection[] = [
+export const termsOfUseSections: LegalSection[] = [
   {
     title: 'Aceitação dos termos',
     paragraphs: [
@@ -79,7 +79,7 @@ export default function TermsOfUseScreen() {
       title="Termos de Uso"
       description="Um resumo claro das regras para usar o Zellu com segurança e entender os limites de cada recurso."
       icon={ScrollText}
-      sections={sections}
+      sections={termsOfUseSections}
     />
   )
 }

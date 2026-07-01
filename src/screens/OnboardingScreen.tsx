@@ -1,33 +1,28 @@
-import React, { useState } from 'react'
+import React, { useMemo, useState } from 'react'
 import { useNavigate } from 'react-router-dom'
-import { useStore } from '@/lib/store'
-import { addVeiculo } from '@/lib/db'
-import type { TipoVeiculo } from '@/lib/types'
-import { Button, Input } from '@/components/ui'
 import { motion, AnimatePresence } from 'framer-motion'
 import toast from 'react-hot-toast'
+import {
+  Bell,
+  Bot,
+  Car,
+  Check,
+  ChevronLeft,
+  ChevronRight,
+  FileText,
+  Fuel,
+  ShieldCheck,
+  Wrench,
+  type LucideIcon,
+} from 'lucide-react'
+import type { LegalSection } from '@/components/legal/LegalDocument'
+import { termsOfUseSections } from '@/screens/TermsOfUseScreen'
+import { privacyPolicySections } from '@/screens/PrivacyPolicyScreen'
 
-// ─── Vehicle type config ─────────────────────────────────────────────────────
+type Step = 'welcome' | 'consent' | 'permissions' | 'finish'
+type PermissionState = 'idle' | 'granted' | 'denied' | 'unsupported'
 
-const VEHICLE_TYPES: { tipo: TipoVeiculo; emoji: string; label: string }[] = [
-  { tipo: 'CARRO', emoji: '🚗', label: 'Carro' },
-  { tipo: 'HATCH', emoji: '🚗', label: 'Hatch' },
-  { tipo: 'SUV', emoji: '🚙', label: 'SUV' },
-  { tipo: 'MOTO', emoji: '🏍', label: 'Moto' },
-  { tipo: 'CAMINHONETE', emoji: '🛻', label: 'Caminhonete' },
-  { tipo: 'VAN', emoji: '🚐', label: 'Van' },
-  { tipo: 'FURGAO', emoji: '🚐', label: 'Furgão' },
-  { tipo: 'CAMINHAO', emoji: '🚛', label: 'Caminhão' },
-  { tipo: 'ONIBUS', emoji: '🚌', label: 'Ônibus' },
-  { tipo: 'BICICLETA', emoji: '🚲', label: 'Bicicleta' },
-  { tipo: 'BIKE_ELETRICA', emoji: '⚡', label: 'Bike Elétrica' },
-  { tipo: 'VEICULO_ELETRICO', emoji: '⚡', label: 'Elétrico' },
-  { tipo: 'TRATOR', emoji: '🚜', label: 'Trator' },
-  { tipo: 'MOTORHOME', emoji: '🏕', label: 'Motorhome' },
-  { tipo: 'CARRETINHA', emoji: '🚛', label: 'Carretinha' },
-]
-
-// ─── iOS detection ────────────────────────────────────────────────────────────
+const STEPS: Step[] = ['welcome', 'consent', 'permissions', 'finish']
 
 function isIosSafariNotStandalone(): boolean {
   if (typeof window === 'undefined') return false
@@ -39,341 +34,590 @@ function isIosSafariNotStandalone(): boolean {
   return isIos && isSafari && !isStandalone
 }
 
-// ─── Slide variants ───────────────────────────────────────────────────────────
+function StepShell({
+  step,
+  onBack,
+  children,
+}: {
+  step: Step
+  onBack?: () => void
+  children: React.ReactNode
+}) {
+  const current = STEPS.indexOf(step)
 
-const slideVariants = {
-  enter: { x: 60, opacity: 0 },
-  center: { x: 0, opacity: 1 },
-  exit: { x: -60, opacity: 0 },
+  return (
+    <div className="flex min-h-dvh w-full flex-col">
+      <header className="relative flex h-[calc(env(safe-area-inset-top)+3.5rem)] flex-shrink-0 items-end border-b border-[#1e2d44]/80 bg-[#0d1526]/92 px-4 pb-2 shadow-lg shadow-black/10 backdrop-blur-xl">
+        <div className="relative flex h-10 w-full items-center">
+          {onBack && (
+            <button
+              type="button"
+              onClick={onBack}
+              className="absolute left-0 flex h-10 w-10 items-center justify-center text-[#aeb8ca] transition-colors hover:text-white active:scale-95"
+              aria-label="Voltar"
+            >
+              <ChevronLeft size={22} />
+            </button>
+          )}
+          <span className="pointer-events-none absolute left-1/2 -translate-x-1/2 text-lg font-semibold text-[#f0f4ff]">
+            Zellu
+          </span>
+        </div>
+      </header>
+
+      <div className="flex flex-shrink-0 justify-center px-5 pt-5">
+        <div className="flex justify-center gap-1.5">
+          {STEPS.map((item, index) => (
+            <span
+              key={item}
+              className={`h-1.5 rounded-full transition-all ${
+                index <= current ? 'w-8 bg-[#4f8df7]' : 'w-3 bg-[#1d2b42]'
+              }`}
+            />
+          ))}
+        </div>
+      </div>
+
+      <div className="flex flex-1 items-center justify-center px-5 pb-5 pt-4 sm:px-6">
+        <div className="w-full max-w-[430px]">
+          {children}
+        </div>
+      </div>
+    </div>
+  )
 }
 
-// ─── Step 1: Welcome ──────────────────────────────────────────────────────────
-
 function StepWelcome({ onNext }: { onNext: () => void }) {
-  const features = [
-    { emoji: '🔔', label: 'Lembretes inteligentes' },
-    { emoji: '⛽', label: 'Controle de gastos' },
-    { emoji: '🤖', label: 'IA do mecânico' },
+  const benefits = [
+    {
+      icon: Bell,
+      title: 'Lembretes inteligentes',
+      desc: 'Revisoes, vencimentos e manutencoes importantes no radar.',
+      color: '#fbbf24',
+    },
+    {
+      icon: Fuel,
+      title: 'Controle de gastos',
+      desc: 'Combustivel, servicos e historico organizados em um so lugar.',
+      color: '#34d399',
+    },
+    {
+      icon: Bot,
+      title: 'Zellu AI',
+      desc: 'Um assistente para tirar duvidas sobre cuidado veicular.',
+      color: '#60a5fa',
+    },
   ]
 
   return (
-    <div className="flex flex-col items-center justify-center min-h-[60vh] gap-8 text-center">
-      <motion.span
-        className="text-7xl"
-        animate={{ scale: [1, 1.12, 1] }}
-        transition={{ duration: 1.8, repeat: Infinity, repeatDelay: 2 }}
-      >
-        🚗
-      </motion.span>
-
-      <div className="space-y-3">
-        <h1 className="text-3xl font-black bg-gradient-to-br from-[#4f8df7] to-[#60a5fa] bg-clip-text text-transparent">
-          Bem-vindo ao Zellu
-        </h1>
-        <p className="text-[#8892a4] text-base leading-relaxed max-w-xs mx-auto">
-          Organize toda a manutenção dos seus veículos em um só lugar.
-        </p>
-      </div>
-
-      <div className="flex flex-col gap-3 w-full max-w-xs">
-        {features.map((f) => (
-          <div
-            key={f.label}
-            className="bg-white/5 backdrop-blur-xl border border-white/10 rounded-2xl px-4 py-3 flex items-center gap-3"
+    <StepShell step="welcome">
+      <div className="space-y-7">
+        <div className="text-center">
+          <motion.div
+            className="mx-auto flex h-20 w-20 items-center justify-center rounded-[28px] bg-gradient-to-br from-[#2563eb] to-[#60a5fa] shadow-2xl shadow-blue-500/25"
+            animate={{ y: [0, -5, 0] }}
+            transition={{ duration: 3, repeat: Infinity, ease: 'easeInOut' }}
           >
-            <span className="text-xl">{f.emoji}</span>
-            <span className="text-[#f0f4ff] text-sm font-medium">{f.label}</span>
-          </div>
-        ))}
-      </div>
+            <Car size={36} className="text-white" />
+          </motion.div>
 
-      <Button variant="gradient" size="lg" fullWidth onClick={onNext}>
-        Começar
-      </Button>
+          <p className="mt-6 text-[11px] font-bold uppercase tracking-[0.28em] text-[#4f8df7]">Zellu</p>
+          <h1 className="mt-2 text-3xl font-semibold tracking-tight text-[#f4f7ff] sm:text-4xl">
+            Bem-vindo ao Zellu
+          </h1>
+          <p className="mx-auto mt-3 max-w-[330px] text-sm leading-6 text-[#8fa2bf]">
+            Gestao veicular inteligente para cuidar dos seus veiculos com menos esquecimento e mais controle.
+          </p>
+        </div>
+
+        <div className="space-y-3">
+          {benefits.map((benefit, index) => {
+            const Icon = benefit.icon
+            return (
+              <motion.div
+                key={benefit.title}
+                className="flex items-center gap-4 rounded-2xl border border-[#1e2d44] bg-[#0f1a2e] px-4 py-4 shadow-lg shadow-black/10"
+                initial={{ opacity: 0, y: 14 }}
+                animate={{ opacity: 1, y: 0 }}
+                transition={{ delay: index * 0.08 + 0.1 }}
+              >
+                <div
+                  className="flex h-11 w-11 shrink-0 items-center justify-center rounded-2xl"
+                  style={{ background: `${benefit.color}16`, color: benefit.color }}
+                >
+                  <Icon size={21} />
+                </div>
+                <div className="min-w-0 text-left">
+                  <p className="text-sm font-semibold text-[#f0f4ff]">{benefit.title}</p>
+                  <p className="mt-1 text-xs leading-5 text-[#6f829e]">{benefit.desc}</p>
+                </div>
+              </motion.div>
+            )
+          })}
+        </div>
+
+        <button
+          type="button"
+          onClick={onNext}
+          className="flex h-13 w-full items-center justify-center gap-2 rounded-2xl bg-gradient-to-r from-[#2563eb] to-[#4f8df7] text-base font-bold text-white shadow-lg shadow-blue-500/20 transition active:scale-[0.98]"
+          style={{ height: 52 }}
+        >
+          Comecar agora
+          <ChevronRight size={18} />
+        </button>
+      </div>
+    </StepShell>
+  )
+}
+
+function StepConsent({
+  accepted,
+  onAcceptedChange,
+  onOpenLegal,
+  onBack,
+  onNext,
+}: {
+  accepted: boolean
+  onAcceptedChange: (accepted: boolean) => void
+  onOpenLegal: (document: 'terms' | 'privacy') => void
+  onBack: () => void
+  onNext: () => void
+}) {
+  return (
+    <StepShell step="consent" onBack={onBack}>
+      <div className="space-y-6">
+        <div className="text-center">
+          <div className="mx-auto flex h-16 w-16 items-center justify-center rounded-3xl bg-[#4f8df7]/15 text-[#60a5fa]">
+            <ShieldCheck size={30} />
+          </div>
+          <h2 className="mt-5 text-2xl font-semibold tracking-tight text-[#f4f7ff]">
+            Antes de continuar
+          </h2>
+          <p className="mx-auto mt-2 max-w-[330px] text-sm leading-6 text-[#8fa2bf]">
+            Para usar o Zellu, confirme que voce leu e aceita os documentos legais do aplicativo.
+          </p>
+        </div>
+
+        <div className="space-y-3">
+          <button
+            type="button"
+            onClick={() => onOpenLegal('terms')}
+            className="flex w-full items-center gap-3 rounded-2xl border border-[#1e2d44] bg-[#0f1a2e] px-4 py-4 text-left transition hover:border-[#335078]"
+          >
+            <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-[#60a5fa]/12 text-[#60a5fa]">
+              <FileText size={20} />
+            </div>
+            <div className="min-w-0 flex-1">
+              <p className="text-sm font-semibold text-[#f0f4ff]">Termos de uso</p>
+              <p className="mt-0.5 text-xs text-[#6f829e]">Regras de uso, limites e responsabilidades.</p>
+            </div>
+            <ChevronRight size={17} className="text-[#607899]" />
+          </button>
+
+          <button
+            type="button"
+            onClick={() => onOpenLegal('privacy')}
+            className="flex w-full items-center gap-3 rounded-2xl border border-[#1e2d44] bg-[#0f1a2e] px-4 py-4 text-left transition hover:border-[#335078]"
+          >
+            <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-[#34d399]/12 text-[#34d399]">
+              <ShieldCheck size={20} />
+            </div>
+            <div className="min-w-0 flex-1">
+              <p className="text-sm font-semibold text-[#f0f4ff]">Politica de privacidade</p>
+              <p className="mt-0.5 text-xs text-[#6f829e]">Como dados e permissoes sao tratados.</p>
+            </div>
+            <ChevronRight size={17} className="text-[#607899]" />
+          </button>
+        </div>
+
+        <label className="flex cursor-pointer items-start gap-3 rounded-2xl border border-[#263650] bg-[#101a2d] px-4 py-4">
+          <input
+            type="checkbox"
+            checked={accepted}
+            onChange={(event) => onAcceptedChange(event.target.checked)}
+            className="mt-1 h-4 w-4 rounded border-[#365073] bg-[#07101f] text-[#4f8df7] accent-[#4f8df7]"
+          />
+          <span className="text-sm leading-6 text-[#c7d7ee]">
+            Li e aceito os Termos de uso e a Politica de privacidade do Zellu.
+          </span>
+        </label>
+
+        <div>
+          <button
+            type="button"
+            onClick={onNext}
+            disabled={!accepted}
+            className="flex h-[52px] w-full items-center justify-center gap-2 rounded-2xl bg-gradient-to-r from-[#2563eb] to-[#4f8df7] text-base font-bold text-white shadow-lg shadow-blue-500/20 transition active:scale-[0.98] disabled:cursor-not-allowed disabled:opacity-45"
+          >
+            Continuar
+            <ChevronRight size={18} />
+          </button>
+        </div>
+      </div>
+    </StepShell>
+  )
+}
+
+function OnboardingLegalView({
+  title,
+  description,
+  icon: Icon,
+  sections,
+  onBack,
+}: {
+  title: string
+  description: string
+  icon: LucideIcon
+  sections: LegalSection[]
+  onBack: () => void
+}) {
+  return (
+    <div className="flex min-h-dvh flex-col">
+      <header className="relative flex h-[calc(env(safe-area-inset-top)+3.5rem)] flex-shrink-0 items-end border-b border-[#1e2d44]/80 bg-[#0d1526]/92 px-4 pb-2 shadow-lg shadow-black/10 backdrop-blur-xl">
+        <button
+          type="button"
+          onClick={onBack}
+          className="flex h-10 w-10 items-center justify-center text-[#aeb8ca] transition-colors hover:text-white active:scale-95"
+          aria-label="Voltar"
+        >
+          <ChevronLeft size={22} />
+        </button>
+        <span className="pointer-events-none absolute bottom-4 left-1/2 -translate-x-1/2 text-lg font-semibold text-[#f0f4ff]">
+          {title}
+        </span>
+      </header>
+
+      <div className="flex-1 px-4 py-5 sm:px-6">
+        <div className="mx-auto flex w-full max-w-2xl flex-col gap-4">
+        <header className="overflow-hidden rounded-[24px] border border-[#284266] bg-gradient-to-br from-[#162849] via-[#13223c] to-[#0d1729] p-5 shadow-xl shadow-black/20">
+          <div className="mb-4 flex h-12 w-12 items-center justify-center rounded-2xl border border-[#60a5fa]/25 bg-[#4f8df7]/15 text-[#70a7ff]">
+            <Icon size={24} />
+          </div>
+          <p className="mb-2 text-[11px] font-bold uppercase tracking-[0.2em] text-[#79a9f8]">Documento Zellu</p>
+          <h1 className="text-2xl font-semibold tracking-tight text-[#f5f7ff]">{title}</h1>
+          <p className="mt-3 text-sm leading-6 text-[#aebbd0]">{description}</p>
+        </header>
+
+        <div className="max-h-[calc(100dvh-230px)] overflow-y-auto rounded-[22px] border border-[#1e304b] bg-[#0d1729]">
+          {sections.map((section, index) => (
+            <section key={section.title} className="border-b border-[#1e304b] px-4 py-5 last:border-b-0 sm:px-5">
+              <div className="flex items-start gap-3">
+                <span className="mt-0.5 flex h-7 w-7 shrink-0 items-center justify-center rounded-full bg-[#4f8df7]/12 text-xs font-bold text-[#70a7ff]">
+                  {index + 1}
+                </span>
+                <div className="min-w-0">
+                  <h2 className="text-base font-semibold text-[#edf3ff]">{section.title}</h2>
+                  <div className="mt-3 space-y-3 text-sm leading-6 text-[#aeb8ca]">
+                    {section.paragraphs.map((paragraph) => (
+                      <p key={paragraph}>{paragraph}</p>
+                    ))}
+                    {section.items && (
+                      <ul className="space-y-2">
+                        {section.items.map((item) => (
+                          <li key={item} className="flex gap-2.5">
+                            <span className="mt-2.5 h-1.5 w-1.5 shrink-0 rounded-full bg-[#60a5fa]" />
+                            <span>{item}</span>
+                          </li>
+                        ))}
+                      </ul>
+                    )}
+                  </div>
+                </div>
+              </div>
+            </section>
+          ))}
+        </div>
+        </div>
+      </div>
     </div>
   )
 }
 
-// ─── Step 2: Add vehicle ──────────────────────────────────────────────────────
+function PermissionButton({
+  icon: Icon,
+  title,
+  desc,
+  state,
+  onClick,
+}: {
+  icon: typeof Bell
+  title: string
+  desc: string
+  state: PermissionState
+  onClick: () => void
+}) {
+  const labels: Record<PermissionState, string> = {
+    idle: 'Permitir',
+    granted: 'Permitido',
+    denied: 'Bloqueado',
+    unsupported: 'Indisponivel',
+  }
 
-function StepVehicle({ onNext, onSkip }: { onNext: () => void; onSkip: () => void }) {
-  const user = useStore((s) => s.user)
-  const addVeiculoStore = useStore((s) => s.addVeiculo)
+  const tone = {
+    idle: 'border-[#1e2d44] bg-[#0f1a2e] text-[#8fa2bf]',
+    granted: 'border-[#22c55e]/30 bg-[#22c55e]/10 text-[#4ade80]',
+    denied: 'border-[#ef4444]/30 bg-[#ef4444]/10 text-[#f87171]',
+    unsupported: 'border-[#334155] bg-[#101826] text-[#64748b]',
+  }[state]
 
-  const [tipoVeiculo, setTipoVeiculo] = useState<TipoVeiculo>('CARRO')
-  const [nome, setNome] = useState('')
-  const [marca, setMarca] = useState('')
-  const [modelo, setModelo] = useState('')
-  const [kmAtual, setKmAtual] = useState('')
-  const [loading, setLoading] = useState(false)
+  return (
+    <div className="rounded-2xl border border-[#1e2d44] bg-[#0f1a2e] p-4">
+      <div className="flex items-start gap-3">
+        <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-[#4f8df7]/12 text-[#60a5fa]">
+          <Icon size={20} />
+        </div>
+        <div className="min-w-0 flex-1">
+          <p className="text-sm font-semibold text-[#f0f4ff]">{title}</p>
+          <p className="mt-1 text-xs leading-5 text-[#6f829e]">{desc}</p>
+        </div>
+      </div>
+      <button
+        type="button"
+        onClick={onClick}
+        disabled={state === 'granted' || state === 'unsupported'}
+        className={`mt-4 flex h-10 w-full items-center justify-center gap-2 rounded-xl border text-xs font-semibold transition active:scale-[0.98] disabled:active:scale-100 ${tone}`}
+      >
+        {state === 'granted' && <Check size={15} />}
+        {labels[state]}
+      </button>
+    </div>
+  )
+}
 
-  async function handleSubmit(e: React.FormEvent) {
-    e.preventDefault()
-    if (!user) return
-    if (!nome.trim()) { toast.error('Informe o nome do veículo'); return }
-
-    setLoading(true)
-    try {
-      const v = await addVeiculo(user.uid, {
-        nome: nome.trim(),
-        marca: marca.trim(),
-        modelo: modelo.trim(),
-        kmAtual: kmAtual ? parseInt(kmAtual, 10) : 0,
-        tipoVeiculo,
-        cor: '',
-        proprietario: user.displayName ?? '',
-        semControleKm: !kmAtual,
-      })
-      addVeiculoStore(v)
-      toast.success('Veículo adicionado!')
-      onNext()
-    } catch {
-      toast.error('Erro ao adicionar veículo')
-    } finally {
-      setLoading(false)
+function StepPermissions({
+  notificationState,
+  setNotificationState,
+  onBack,
+  onNext,
+}: {
+  notificationState: PermissionState
+  setNotificationState: (state: PermissionState) => void
+  onBack: () => void
+  onNext: () => void
+}) {
+  async function requestNotifications() {
+    if (!('Notification' in window)) {
+      setNotificationState('unsupported')
+      return
     }
+    const result = await Notification.requestPermission()
+    setNotificationState(result === 'granted' ? 'granted' : 'denied')
+    if (result !== 'granted') toast('Voce pode liberar notificacoes depois nas configuracoes do navegador.')
   }
 
   return (
-    <div className="flex flex-col gap-6">
-      <div className="text-center space-y-1">
-        <h2 className="text-2xl font-black text-[#f0f4ff]">Qual seu veículo?</h2>
-        <p className="text-[#8892a4] text-sm">Adicione seu primeiro veículo</p>
+    <StepShell step="permissions" onBack={onBack}>
+      <div className="space-y-6">
+        <div className="text-center">
+          <div className="mx-auto flex h-16 w-16 items-center justify-center rounded-3xl bg-[#60a5fa]/15 text-[#60a5fa]">
+            <Wrench size={30} />
+          </div>
+          <h2 className="mt-5 text-2xl font-semibold tracking-tight text-[#f4f7ff]">
+            Avisos do navegador
+          </h2>
+          <p className="mx-auto mt-2 max-w-[340px] text-sm leading-6 text-[#8fa2bf]">
+            Libere notificacoes para receber lembretes de manutencao, vencimentos e avisos importantes.
+          </p>
+        </div>
+
+        <div className="space-y-3">
+          <PermissionButton
+            icon={Bell}
+            title="Notificacoes"
+            desc="Usadas para avisos de manutencao, vencimentos e lembretes."
+            state={notificationState}
+            onClick={() => void requestNotifications()}
+          />
+        </div>
+
+        <div>
+          <button
+            type="button"
+            onClick={onNext}
+            className="flex h-[52px] w-full items-center justify-center gap-2 rounded-2xl bg-gradient-to-r from-[#2563eb] to-[#4f8df7] text-base font-bold text-white shadow-lg shadow-blue-500/20 transition active:scale-[0.98]"
+          >
+            Continuar
+            <ChevronRight size={18} />
+          </button>
+        </div>
       </div>
-
-      {/* Type selector */}
-      <div className="relative">
-        <span className="absolute left-4 top-1/2 -translate-y-1/2 text-xl pointer-events-none select-none">
-          {VEHICLE_TYPES.find((vt) => vt.tipo === tipoVeiculo)?.emoji ?? '🚗'}
-        </span>
-        <select
-          value={tipoVeiculo}
-          onChange={(e) => setTipoVeiculo(e.target.value as TipoVeiculo)}
-          className="w-full bg-[#1a2540] border border-[#1e2d44] text-[#f0f4ff] rounded-2xl pl-12 pr-10 py-3 text-base appearance-none focus:outline-none focus:border-[#4f8df7] focus:ring-1 focus:ring-[#4f8df7]/30 cursor-pointer"
-        >
-          {VEHICLE_TYPES.map((vt) => (
-            <option key={vt.tipo} value={vt.tipo} style={{ background: '#1a2540' }}>
-              {vt.emoji}  {vt.label}
-            </option>
-          ))}
-        </select>
-        <span className="absolute right-4 top-1/2 -translate-y-1/2 text-[#8892a4] pointer-events-none">
-          <svg width="14" height="14" viewBox="0 0 14 14" fill="none">
-            <path d="M3 5l4 4 4-4" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round"/>
-          </svg>
-        </span>
-      </div>
-
-      <form onSubmit={handleSubmit} className="space-y-4">
-        <Input
-          label="Nome"
-          placeholder="Ex: Meu Carro"
-          value={nome}
-          onChange={(e) => setNome(e.target.value)}
-        />
-        <Input
-          label="Marca"
-          placeholder="Ex: Toyota"
-          value={marca}
-          onChange={(e) => setMarca(e.target.value)}
-        />
-        <Input
-          label="Modelo"
-          placeholder="Ex: Corolla"
-          value={modelo}
-          onChange={(e) => setModelo(e.target.value)}
-        />
-        <Input
-          label="KM atual"
-          type="number"
-          placeholder="Ex: 45000"
-          value={kmAtual}
-          onChange={(e) => setKmAtual(e.target.value)}
-        />
-
-        <Button type="submit" variant="gradient" size="lg" fullWidth loading={loading}>
-          Adicionar
-        </Button>
-      </form>
-
-      <div className="text-center">
-        <button
-          type="button"
-          onClick={onSkip}
-          className="bg-white/5 hover:bg-white/10 border border-[#1e2d44] rounded-2xl px-6 py-2.5 text-sm text-[#8892a4] hover:text-[#f0f4ff] transition-all"
-        >
-          Pular por agora
-        </button>
-      </div>
-    </div>
+    </StepShell>
   )
 }
 
-// ─── Step 3: Finish / PWA install ────────────────────────────────────────────
-
-function StepFinish() {
-  const navigate = useNavigate()
+function StepFinish({ onBack, onFinish }: { onBack: () => void; onFinish: () => void }) {
   const isIos = isIosSafariNotStandalone()
+  const tips = useMemo(() => {
+    if (!isIos) {
+      return [
+        'Cadastre seu primeiro veiculo',
+        'Crie lembretes de revisao',
+        'Registre abastecimentos e custos',
+      ]
+    }
 
-  function handleFinish() {
+    return [
+      'Toque em Compartilhar no Safari',
+      'Escolha Adicionar a Tela Inicial',
+      'Abra o Zellu pelo icone instalado',
+    ]
+  }, [isIos])
+
+  return (
+    <StepShell step="finish" onBack={onBack}>
+      <div className="space-y-7 text-center">
+        <motion.div
+          className="mx-auto flex h-20 w-20 items-center justify-center rounded-[28px] bg-[#22c55e]/14 text-[#4ade80]"
+          initial={{ scale: 0.88, opacity: 0 }}
+          animate={{ scale: 1, opacity: 1 }}
+        >
+          <Check size={38} />
+        </motion.div>
+
+        <div>
+          <h2 className="text-3xl font-semibold tracking-tight text-[#f4f7ff]">
+            Tudo pronto
+          </h2>
+          <p className="mx-auto mt-3 max-w-[340px] text-sm leading-6 text-[#8fa2bf]">
+            {isIos
+              ? 'Para uma experiencia melhor no iPhone, instale o Zellu na tela inicial.'
+              : 'Agora voce pode entrar no app e organizar sua garagem.'}
+          </p>
+        </div>
+
+        <div className="rounded-2xl border border-[#1e2d44] bg-[#0f1a2e] p-4 text-left">
+          <p className="text-[11px] font-bold uppercase tracking-[0.18em] text-[#607899]">
+            Proximos passos
+          </p>
+          <div className="mt-3 space-y-3">
+            {tips.map((tip, index) => (
+              <div key={tip} className="flex items-center gap-3 text-sm text-[#c7d7ee]">
+                <span className="flex h-7 w-7 shrink-0 items-center justify-center rounded-full bg-[#4f8df7]/14 text-xs font-bold text-[#8bb9ff]">
+                  {index + 1}
+                </span>
+                <span>{tip}</span>
+              </div>
+            ))}
+          </div>
+        </div>
+
+        <button
+          type="button"
+          onClick={onFinish}
+          className="flex h-[52px] w-full items-center justify-center gap-2 rounded-2xl bg-gradient-to-r from-[#2563eb] to-[#4f8df7] text-base font-bold text-white shadow-lg shadow-blue-500/20 transition active:scale-[0.98]"
+        >
+          Acessar o Zellu
+          <ChevronRight size={18} />
+        </button>
+      </div>
+    </StepShell>
+  )
+}
+
+export default function OnboardingScreen() {
+  const navigate = useNavigate()
+  const [step, setStep] = useState<Step>('welcome')
+  const [previousStep, setPreviousStep] = useState<Step>('welcome')
+  const [legalView, setLegalView] = useState<'terms' | 'privacy' | null>(null)
+  const [accepted, setAccepted] = useState(localStorage.getItem('zellu-legal-accepted') === '1')
+  const [notificationState, setNotificationState] = useState<PermissionState>(() => {
+    if (!('Notification' in window)) return 'unsupported'
+    return Notification.permission === 'granted' ? 'granted' : Notification.permission === 'denied' ? 'denied' : 'idle'
+  })
+
+  function goTo(next: Step) {
+    setPreviousStep(step)
+    setStep(next)
+  }
+
+  function finish() {
+    if (accepted) localStorage.setItem('zellu-legal-accepted', '1')
     localStorage.setItem('zellu-onboarded', '1')
     navigate('/')
   }
 
-  // Animated confetti dots
-  const dots = Array.from({ length: 18 }, (_, i) => i)
+  const dir = STEPS.indexOf(step) >= STEPS.indexOf(previousStep) ? 1 : -1
+  const content: Record<Step, React.ReactNode> = {
+    welcome: <StepWelcome onNext={() => goTo('consent')} />,
+    consent: (
+      <StepConsent
+        accepted={accepted}
+        onAcceptedChange={setAccepted}
+        onOpenLegal={setLegalView}
+        onBack={() => goTo('welcome')}
+        onNext={() => {
+          if (!accepted) return
+          localStorage.setItem('zellu-legal-accepted', '1')
+          goTo('permissions')
+        }}
+      />
+    ),
+    permissions: (
+      <StepPermissions
+        notificationState={notificationState}
+        setNotificationState={setNotificationState}
+        onBack={() => goTo('consent')}
+        onNext={() => goTo('finish')}
+      />
+    ),
+    finish: <StepFinish onBack={() => goTo('permissions')} onFinish={finish} />,
+  }
 
-  if (isIos) {
+  if (legalView) {
     return (
-      <div className="flex flex-col items-center gap-8 text-center">
-        <div className="space-y-2">
-          <h2 className="text-2xl font-black text-[#f0f4ff]">Instale o app 📲</h2>
-          <p className="text-[#8892a4] text-sm leading-relaxed">
-            Para a melhor experiência, adicione o Zellu à sua tela inicial.
-          </p>
+      <motion.main
+        className="min-h-dvh overflow-y-auto bg-[#070c14] text-white"
+        style={{ paddingTop: 'env(safe-area-inset-top)', paddingBottom: 'env(safe-area-inset-bottom)' }}
+        initial={{ opacity: 0 }}
+        animate={{ opacity: 1 }}
+        transition={{ duration: 0.2 }}
+      >
+        <div className="pointer-events-none fixed inset-0 bg-[radial-gradient(circle_at_50%_0%,rgba(79,141,247,0.18),transparent_34%),linear-gradient(180deg,rgba(7,12,20,0)_0%,#070c14_74%)]" />
+        <div className="relative z-10">
+          <OnboardingLegalView
+            title={legalView === 'terms' ? 'Termos de uso' : 'Politica de privacidade'}
+            description={
+              legalView === 'terms'
+                ? 'Leia as regras principais para usar o Zellu com seguranca.'
+                : 'Veja como o Zellu trata dados, permissoes e privacidade.'
+            }
+            icon={legalView === 'terms' ? FileText : ShieldCheck}
+            sections={legalView === 'terms' ? termsOfUseSections : privacyPolicySections}
+            onBack={() => setLegalView(null)}
+          />
         </div>
-
-        <div className="w-full bg-[#131e33] border border-[#1e2d44] rounded-2xl p-5 space-y-5 text-left">
-          {[
-            { step: '1', text: 'Toque no botão Compartilhar', icon: '⬆️' },
-            { step: '2', text: 'Role até "Adicionar à Tela Inicial"', icon: '📌' },
-            { step: '3', text: 'Toque em "Adicionar"', icon: '✅' },
-          ].map((item, i) => (
-            <motion.div
-              key={item.step}
-              className="flex items-center gap-4"
-              initial={{ opacity: 0, x: -20 }}
-              animate={{ opacity: 1, x: 0 }}
-              transition={{ delay: i * 0.15 + 0.3 }}
-            >
-              <div className="w-8 h-8 rounded-full bg-gradient-to-br from-[#4f8df7] to-[#60a5fa] flex items-center justify-center text-white text-xs font-bold flex-shrink-0">
-                {item.step}
-              </div>
-              <div className="flex items-center gap-2">
-                <span className="text-xl">{item.icon}</span>
-                <span className="text-[#f0f4ff] text-sm">{item.text}</span>
-              </div>
-            </motion.div>
-          ))}
-        </div>
-
-        <Button variant="ghost" size="lg" fullWidth onClick={handleFinish}>
-          Continuar mesmo assim
-        </Button>
-      </div>
+      </motion.main>
     )
   }
 
   return (
-    <div className="flex flex-col items-center gap-8 text-center">
-      {/* Confetti dots */}
-      <div className="relative w-32 h-32 flex items-center justify-center">
-        {dots.map((i) => (
-          <motion.div
-            key={i}
-            className="absolute w-2 h-2 rounded-full"
-            style={{
-              background: i % 3 === 0 ? '#4f8df7' : i % 3 === 1 ? '#60a5fa' : '#f0f4ff',
-            }}
-            animate={{
-              x: Math.cos((i / dots.length) * Math.PI * 2) * (40 + Math.sin(i) * 15),
-              y: Math.sin((i / dots.length) * Math.PI * 2) * (40 + Math.cos(i) * 15),
-              opacity: [0.4, 1, 0.4],
-              scale: [0.6, 1.2, 0.6],
-            }}
-            transition={{
-              duration: 2.5,
-              repeat: Infinity,
-              delay: (i / dots.length) * 1.2,
-              ease: 'easeInOut',
-            }}
-          />
-        ))}
-        <span className="text-4xl z-10">🎉</span>
-      </div>
-
-      <div className="space-y-2">
-        <h2 className="text-3xl font-black text-[#f0f4ff]">Tudo pronto!</h2>
-        <p className="text-[#8892a4] text-base leading-relaxed">
-          Seu Zellu está configurado e pronto para usar.
-        </p>
-      </div>
-
-      <Button variant="gradient" size="lg" fullWidth onClick={handleFinish}>
-        Acessar o app
-      </Button>
-    </div>
-  )
-}
-
-// ─── Main screen ──────────────────────────────────────────────────────────────
-
-export default function OnboardingScreen() {
-  const [step, setStep] = useState(0)
-  const [prevStep, setPrevStep] = useState(0)
-
-  function goTo(next: number) {
-    setPrevStep(step)
-    setStep(next)
-  }
-
-  const slideDir = step >= prevStep ? 1 : -1
-
-  const steps = [
-    <StepWelcome key="welcome" onNext={() => goTo(1)} />,
-    <StepVehicle key="vehicle" onNext={() => goTo(2)} onSkip={() => goTo(2)} />,
-    <StepFinish key="finish" />,
-  ]
-
-  return (
-    <motion.div
-      className="min-h-screen bg-[#070c14] flex flex-col"
+    <motion.main
+      className="min-h-dvh overflow-y-auto bg-[#070c14] text-white"
       style={{ paddingTop: 'env(safe-area-inset-top)', paddingBottom: 'env(safe-area-inset-bottom)' }}
-      initial={{ opacity: 0, y: 10 }}
-      animate={{ opacity: 1, y: 0 }}
-      exit={{ opacity: 0, y: -5 }}
+      initial={{ opacity: 0 }}
+      animate={{ opacity: 1 }}
       transition={{ duration: 0.25 }}
     >
-      {/* Content area */}
-      <div className="flex-1 flex flex-col justify-center items-center px-6 py-8 overflow-hidden">
-        <div className="w-full max-w-sm">
-          <AnimatePresence mode="wait" custom={slideDir}>
-            <motion.div
-              key={step}
-              custom={slideDir}
-              variants={{
-                enter: (dir: number) => ({ x: dir > 0 ? 60 : -60, opacity: 0 }),
-                center: { x: 0, opacity: 1 },
-                exit: (dir: number) => ({ x: dir > 0 ? -60 : 60, opacity: 0 }),
-              }}
-              initial="enter"
-              animate="center"
-              exit="exit"
-              transition={{ duration: 0.25, ease: 'easeInOut' }}
-            >
-              {steps[step]}
-            </motion.div>
-          </AnimatePresence>
-        </div>
-      </div>
-
-      {/* Progress dots */}
-      <div className="flex justify-center gap-2 pb-8">
-        {steps.map((_, i) => (
+      <div className="pointer-events-none fixed inset-0 bg-[radial-gradient(circle_at_50%_0%,rgba(79,141,247,0.18),transparent_34%),linear-gradient(180deg,rgba(7,12,20,0)_0%,#070c14_74%)]" />
+      <div className="relative z-10">
+        <AnimatePresence mode="wait" custom={dir}>
           <motion.div
-            key={i}
-            className="rounded-full"
-            animate={{
-              width: i === step ? 20 : 8,
-              background: i === step
-                ? 'linear-gradient(to right, #4f8df7, #60a5fa)'
-                : '#1e2d44',
+            key={step}
+            custom={dir}
+            variants={{
+              enter: (direction: number) => ({ x: direction > 0 ? 36 : -36, opacity: 0 }),
+              center: { x: 0, opacity: 1 },
+              exit: (direction: number) => ({ x: direction > 0 ? -36 : 36, opacity: 0 }),
             }}
-            style={{ height: 8 }}
-            transition={{ duration: 0.3 }}
-          />
-        ))}
+            initial="enter"
+            animate="center"
+            exit="exit"
+            transition={{ duration: 0.22, ease: 'easeInOut' }}
+          >
+            {content[step]}
+          </motion.div>
+        </AnimatePresence>
       </div>
-    </motion.div>
+    </motion.main>
   )
 }

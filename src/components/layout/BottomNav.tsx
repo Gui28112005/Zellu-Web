@@ -1,13 +1,11 @@
-import React, { useEffect } from 'react'
+﻿import React, { useEffect } from 'react'
 import { useLocation, Link, useNavigate } from 'react-router-dom'
 import {
   BookOpen,
   Car,
-  Crown,
   PlusCircle,
   ScrollText,
   ShieldCheck,
-  User,
   X,
 } from 'lucide-react'
 import { AnimatePresence, motion } from 'framer-motion'
@@ -17,13 +15,12 @@ import { Avatar } from '@/components/ui'
 const tabs = [
   { label: 'Garagem',          icon: Car,       path: '/garagem' },
   { label: 'Zellu biblioteca', icon: BookOpen,  path: '/biblioteca' },
-  { label: 'Zellu Premium',    icon: Crown,     path: '/premium' },
-  { label: 'Perfil',           icon: User,      path: '/perfil' },
-  { label: 'Cadastrar veículo', icon: PlusCircle, path: null },
+  { label: 'Beneficios',       icon: ShieldCheck, path: '/premium/beneficios' },
+  { label: 'Cadastrar veiculo', icon: PlusCircle, path: null },
 ] as const
 
 const legalTabs = [
-  { label: 'Política de privacidade', icon: ShieldCheck, path: '/politica-de-privacidade' },
+  { label: 'Politica de privacidade', icon: ShieldCheck, path: '/politica-de-privacidade' },
   { label: 'Termos de uso', icon: ScrollText, path: '/termos-de-uso' },
 ] as const
 
@@ -36,7 +33,7 @@ export function SideNav({ open, onClose }: SideNavProps) {
   const location = useLocation()
   const navigate = useNavigate()
   const user = useStore((s) => s.user)
-  const displayName = user?.displayName ?? user?.email?.split('@')[0] ?? 'Usuário'
+  const displayName = user?.displayName ?? user?.email?.split('@')[0] ?? 'Usuario'
   const email = user?.email ?? ''
 
   useEffect(() => {
@@ -51,7 +48,7 @@ export function SideNav({ open, onClose }: SideNavProps) {
   }, [open, onClose])
 
   const isActive = (path: string) => {
-    if (path === '/') return location.pathname === '/'
+    if (path === '/' || path === '/premium') return location.pathname === path
     return location.pathname.startsWith(path)
   }
 
@@ -82,7 +79,7 @@ export function SideNav({ open, onClose }: SideNavProps) {
             }}
           >
             <div className="mb-7 flex items-center justify-between px-2">
-              <div className="flex items-center gap-3 min-w-0">
+              <Link to="/perfil" onClick={onClose} className="flex min-w-0 items-center gap-3 rounded-2xl transition hover:opacity-90">
                 <Avatar
                   name={displayName}
                   src={user?.photoURL ?? undefined}
@@ -94,7 +91,7 @@ export function SideNav({ open, onClose }: SideNavProps) {
                     <p className="truncate text-xs text-[#8892a4]">{email}</p>
                   )}
                 </div>
-              </div>
+              </Link>
               <button
                 type="button"
                 onClick={onClose}
@@ -200,3 +197,4 @@ export function SideNav({ open, onClose }: SideNavProps) {
     </AnimatePresence>
   )
 }
+

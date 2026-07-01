@@ -252,6 +252,8 @@ const avatarSizes = {
 }
 
 export function Avatar({ name, src, size = 'md', className }: AvatarProps) {
+  const [imgFailed, setImgFailed] = React.useState(false)
+
   const initials = name
     .split(' ')
     .map((n) => n[0])
@@ -259,12 +261,14 @@ export function Avatar({ name, src, size = 'md', className }: AvatarProps) {
     .join('')
     .toUpperCase()
 
-  if (src) {
+  if (src && !imgFailed) {
     return (
       <img
         src={src}
         alt={name}
-        className={cn('rounded-full object-cover', avatarSizes[size], className)}
+        referrerPolicy="no-referrer"
+        onError={() => setImgFailed(true)}
+        className={cn('rounded-full object-cover flex-shrink-0', avatarSizes[size], className)}
       />
     )
   }
